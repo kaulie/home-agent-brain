@@ -1,0 +1,14 @@
+# Brain runtime artifacts (never source)
+server/.venv/
+server/__pycache__/
+server/**/__pycache__/
+server/data/
+server/llm_logs/
+server/logs/
+server/uploads/
+*.pyc
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+.env
+.DS_Store
