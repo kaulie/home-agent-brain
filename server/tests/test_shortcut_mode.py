@@ -501,6 +501,41 @@ class ShortcutModeTest(unittest.TestCase):
         )
         self.assertEqual(plan[1]["capability"], "xiaodu.play")
 
+    def test_audio_control_routes_pause_resume_stop(self) -> None:
+        """「暂停小度 / 停止小度播放 / 电视继续」→ xiaodu.control / display.audio.control。"""
+        cases = (
+            ("暂停小度", "xiaodu.control", "pause"),
+            ("停止小度播放", "xiaodu.control", "stop"),
+            ("小度先停一下", "xiaodu.control", "pause"),
+            ("继续小度播放", "xiaodu.control", "resume"),
+            ("小度别放了", "xiaodu.control", "stop"),
+            ("暂停电视播放", "display.audio.control", "pause"),
+            ("把电视上的音频停掉", "display.audio.control", "stop"),
+            ("电视继续播放", "display.audio.control", "resume"),
+        )
+        for text, capability, action in cases:
+            with self.subTest(text=text):
+                plan = self._rule_hit(text, rule="audio_control", goal=capability)
+                self.assertEqual(len(plan), 1)
+                self.assertEqual(plan[0]["capability"], capability)
+                self.assertEqual(plan[0]["input_constrict"], {"action": action})
+                self.assertIn("status_text", plan[0]["output_constrict"])
+
+    def test_audio_control_needs_named_device(self) -> None:
+        """没点名设备就不拦（「暂停」可能属于 netease music 那条链路）。"""
+        for text in ("暂停", "停止播放", "继续播放"):
+            with self.subTest(text=text):
+                hit = intercept(text)
+                if hit is not None:
+                    self.assertNotEqual((hit.planner_meta or {}).get("rule"), "audio_control")
+
+    def test_audio_control_leaves_music_alone(self) -> None:
+        for text in ("停止播放歌曲", "暂停音乐", "停止小度的歌"):
+            with self.subTest(text=text):
+                hit = intercept(text)
+                if hit is not None:
+                    self.assertNotEqual((hit.planner_meta or {}).get("rule"), "audio_control")
+
     def test_latest_audio_cast_leaves_music_and_video_alone(self) -> None:
         # 点歌 / 放歌归 music.*；视频、照片、PDF 各有自己的能力。
         for text in (

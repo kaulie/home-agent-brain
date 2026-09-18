@@ -780,6 +780,39 @@ class HomeBrainPersistTest(unittest.TestCase):
         )
         self.assertEqual(field, "status_text")
 
+    def test_sanitize_gates_playback_control_on_named_device(self) -> None:
+        """LLM 自己排了 xiaodu.control 时：没点名设备 → 剥掉。"""
+        plan = [
+            {
+                "step": 1,
+                "capability": "xiaodu.control",
+                "input_constrict": {"action": "pause"},
+            }
+        ]
+        self.assertEqual(
+            hb.sanitize_execution_plan(plan, {"text": "暂停", "source": "voice"}), []
+        )
+        kept = hb.sanitize_execution_plan(
+            plan, {"text": "暂停小度", "source": "voice"}
+        )
+        self.assertEqual([s["capability"] for s in kept], ["xiaodu.control"])
+
+    def test_presentation_kind_playback_control_uses_status_text(self) -> None:
+        kind, field = hb._presentation_kind_from_plan(
+            {
+                "text": "暂停小度",
+                "source": "voice",
+                "execution_plan": [
+                    {
+                        "step": 1,
+                        "capability": "xiaodu.control",
+                        "output_constrict": {"status_text": {"type": "string"}},
+                    }
+                ],
+            }
+        )
+        self.assertEqual(field, "status_text")
+
     def test_do_execution_plan_assigns_composite_to_available_runtime(self) -> None:
         self._register_photo_runtimes()
         iid = hb.new_intent(
