@@ -62,6 +62,8 @@ rsync -a \
   --exclude='.env' \
   --exclude='data/' \
   --exclude='logs/' \
+  --exclude='*.log' \
+  --exclude='*.out' \
   --exclude='llm_logs/' \
   --exclude='uploads/' \
   "${ROOT}/server/" "${OUT}/server/"
