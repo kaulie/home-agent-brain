@@ -87,7 +87,8 @@ Python 3.10+，唯一三方依赖是 **Flask**（`server/requirements.txt`，`st
 └── backend/                       ★ 平台唯一保留的运行期目录
     ├── .env                       密钥 + 部署配置（BRAIN_DATA_DIR / BRAIN_LOG_DIR / BRAIN_UPLOAD_DIR）
     ├── runtime.pid                start.sh 写
-    └── server.log                 start.sh 写
+    ├── server.log                 start.sh 写（Brain 自己的日志走 BRAIN_LOG_DIR）
+    └── data/.venv                 Python 依赖（Flask）安装在这里，部署不用重装
 ```
 
 库 / 日志 / 上传字节都放**代码之外**（`BRAIN_DATA_DIR` 及 `BRAIN_LOG_DIR`、`BRAIN_UPLOAD_DIR` 指向它），
