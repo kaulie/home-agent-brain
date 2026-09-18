@@ -452,6 +452,13 @@ ADS: dict[str, dict[str, Any]] = {
         typical_triggers=["轮播这几张照片", "电视上放幻灯片", "把这些照片轮播"],
         do_not_dispatch=["单图投屏", "拍照", "看图", "按厂商选设备"],
     ),
+    "display.audio": _ad(
+        kind="output",
+        role="音频投电视播放器",
+        planner_recognize="把本步已有的 audio Asset（如论文听读产出的音频）交给电视用 DLNA 放出来。入参 asset_ref（必填，type=audio，常为 $asset_ref）。用户没说是哪份音频时，先排 asset.inventory（type=audio, order=newest_first, index=1）再接本步。本步只出声，不投图、不放歌、不做 TTS、不打印",
+        typical_triggers=["把最新的音频在小米电视上放出来", "让小米电视播放最新的音频", "把这段录音投到电视上放", "在电视上放这段音频"],
+        do_not_dispatch=["投图", "投 PDF", "点歌放歌", "打印", "TTS 念文本", "ChromeCast 投屏"],
+    ),
     "display.pdf": _ad(
         kind="output",
         role="PDF 投屏打开器",
@@ -535,6 +542,71 @@ ADS: dict[str, dict[str, Any]] = {
             "把 PDF 第 3 到 5 页转成图",
         ],
         do_not_dispatch=["打印", "OCR", "看图理解", "投屏翻页", "PDF 旋转", "图片合成 PDF", "拍照"],
+    ),
+    "pdf.reader": _ad(
+        kind="action",
+        role="PDF 语音朗读器",
+        planner_recognize=(
+            "把本步已有的 PDF/document Asset 的文字念成一段语音（TTS 音频 Asset）："
+            "用户说「念一下这份 PDF / 把这份文档读给我听 / 朗读这个 PDF」时用本步。"
+            "入参 asset_ref（必填，type=document，常为 $asset_ref），可选 page_start/page_end、"
+            "speed、voice、max_chars。产出 audio AssetRef——语音入口把 presentation 设为 "
+            "{type:audio, from:asset_ref} 播放这段朗读；用户没指定哪份 PDF 时，先排 "
+            "asset.inventory 取最新 document 再接本步。只念文档正文，不是短提醒/公告"
+            "（那种用 notify.speak）；扫描件（无文字层）本步会失败，要先 pdf.to_images + image.ocr"
+        ),
+        typical_triggers=[
+            "念一下这份 PDF",
+            "把这份文档读给我听",
+            "朗读这个 PDF",
+            "把 PDF 转成语音",
+            "读一遍这个文档",
+        ],
+        do_not_dispatch=[
+            "打印",
+            "投屏",
+            "看图理解",
+            "OCR 识别",
+            "拍照",
+            "提醒/公告短句播报",
+            "放歌",
+            "PDF 转图片",
+            "PDF 旋转",
+        ],
+    ),
+    "paper.read": _ad(
+        kind="action",
+        role="论文听读器（论文/长文献 → 结构化听读音频）",
+        planner_recognize=(
+            "把已有的论文 PDF/document Asset 转成适合**连续听读**的音频：用户说「把这篇论文念给我听 / "
+            "听读这篇 paper / 这篇论文太长了听一遍 / 帮我听读这篇研究」时用本步。与 pdf.reader 的分工："
+            "pdf.reader 只管「念一下这份 PDF」这类通用短文档；本步面向论文/长文献，会做结构（识别章节、"
+            "跳过 References 与页眉页脚、不念图表说明），并回 sections[] 索引（每节字数/页范围/估算起始秒）。"
+            "入参 asset_ref（必填，type=document，常为 $asset_ref）；mode 默认 original（原文听读，忠实原文、"
+            "不讲解），可选 page_start/page_end、speed、voice、max_chars。产出 audio AssetRef——语音入口把 "
+            "presentation 设为 {type:audio, from:asset_ref} 播放。用户没指定哪篇论文时，先排 asset.inventory "
+            "取最新 document 再接本步。mode=explain（AI 讲解）v1 保留未交付，传了会明确失败；"
+            "扫描件（无文字层）会失败，要先 pdf.to_images + image.ocr"
+        ),
+        typical_triggers=[
+            "把这篇论文念给我听",
+            "听读这篇 paper",
+            "这篇论文太长了，听一遍",
+            "帮我听读这篇研究",
+            "朗读这篇论文",
+        ],
+        do_not_dispatch=[
+            "念一份普通 PDF/说明书（用 pdf.reader）",
+            "论文总结 / Markdown 报告",
+            "论文问答",
+            "打印",
+            "投屏",
+            "OCR 识别",
+            "PDF 转图片",
+            "PDF 旋转",
+            "提醒/公告短句播报",
+            "放歌",
+        ],
     ),
     "web.scraper": _ad(
         kind="action",

@@ -384,6 +384,72 @@ class HomeBrainPersistTest(unittest.TestCase):
         self.assertEqual(intent["presentation"]["from"], "msg")
         self.assertEqual(intent["presentation"]["text"], "拍照节点当前不在线，无法拍照")
 
+    # --- ncm-cli login loss: human reason + link only for iPhone origin ---
+
+    _LOGIN_URL = "https://163cn.tv/bgl5Nc5N"
+
+    def _login_failure_intent(self, *, issuer: str, login_url: str | None = None) -> dict:
+        """Intent whose music step failed because ncm-cli is logged out."""
+        info: dict = {
+            "logged_in": False,
+            "reason": "未登录，请执行 ncm-cli login 完成登录",
+        }
+        url = self._LOGIN_URL if login_url is None else login_url
+        if url:
+            info["login_url"] = url
+        return {
+            "text": "播放五月天的歌",
+            "source": "voice",
+            "intent_origin": "lan",
+            "edge_id": issuer,
+            "source_context": {"device_id": issuer},
+            "execution_plan": [{"step": 1, "capability": "music.play"}],
+            "step_outputs": {"1": {"netease_login": info}},
+        }
+
+    def test_failure_presentation_login_link_hidden_for_mac_origin(self) -> None:
+        self._register_endpoint("living-room-mac", "mac")
+        intent = self._login_failure_intent(issuer="living-room-mac")
+        raw = "ncm-cli 未返回 JSON：error: unknown command 'playlist'"
+        text = hb._apply_failure_presentation(intent, raw)
+        self.assertNotIn("playlist", text)
+        self.assertNotIn("163cn.tv", text)
+        self.assertIn("登录已失效", text)
+        self.assertEqual(intent["presentation"]["text"], text)
+        self.assertEqual(intent["presentation"]["from"], "msg")
+
+    def test_failure_presentation_login_link_shown_for_iphone_origin(self) -> None:
+        self._register_endpoint("living-room-iphone-1", "iphone")
+        intent = self._login_failure_intent(issuer="living-room-iphone-1")
+        text = hb._apply_failure_presentation(intent, "ncm-cli 未返回 JSON：boom")
+        self.assertIn(self._LOGIN_URL, text)
+        self.assertIn("登录已失效", text)
+        self.assertEqual(intent["presentation"]["text"], text)
+
+    def test_failure_presentation_login_link_hidden_without_url(self) -> None:
+        self._register_endpoint("living-room-iphone-1", "iphone")
+        intent = self._login_failure_intent(issuer="living-room-iphone-1", login_url="")
+        text = hb._apply_failure_presentation(intent, "boom")
+        self.assertIn("登录已失效", text)
+        self.assertNotIn("http", text)
+
+    def test_failure_presentation_login_link_hidden_for_unknown_device(self) -> None:
+        intent = self._login_failure_intent(issuer="ghost-1")
+        text = hb._apply_failure_presentation(intent, "boom")
+        self.assertIn("登录已失效", text)
+        self.assertNotIn("163cn.tv", text)
+
+    def test_failure_presentation_non_login_failure_keeps_msg(self) -> None:
+        intent = {
+            "text": "拍照",
+            "source": "voice",
+            "edge_id": "x",
+            "step_outputs": {"1": {"answer_text": "noop"}},
+        }
+        text = hb._apply_failure_presentation(intent, "拍照节点当前不在线")
+        self.assertEqual(text, "拍照节点当前不在线")
+        self.assertEqual(intent["presentation"]["text"], "拍照节点当前不在线")
+
     def test_client_hint_reuses_participant_id(self) -> None:
         client = hb.app.test_client()
         first = client.post(
@@ -638,6 +704,33 @@ class HomeBrainPersistTest(unittest.TestCase):
         ]
         cleaned = hb.sanitize_execution_plan(plan, intent)
         self.assertEqual([s["capability"] for s in cleaned], ["asset.upload"])
+
+    def test_sanitize_gates_display_audio_on_tv_request(self) -> None:
+        """LLM 自己排了 display.audio 时：用户没点名电视 → 剥掉（留在手机上播）。"""
+        plan = [
+            {
+                "step": 1,
+                "capability": "asset.inventory",
+                "input_constrict": {"type": "audio"},
+            },
+            {
+                "step": 2,
+                "capability": "display.audio",
+                "input_constrict": {"asset_ref": "$asset_ref"},
+            },
+        ]
+        without_tv = hb.sanitize_execution_plan(
+            plan, {"text": "把最新的音频放出来", "source": "voice"}
+        )
+        self.assertEqual(
+            [s["capability"] for s in without_tv], ["asset.inventory"]
+        )
+        with_tv = hb.sanitize_execution_plan(
+            plan, {"text": "把最新的音频在小米电视上放出来", "source": "voice"}
+        )
+        self.assertEqual(
+            [s["capability"] for s in with_tv], ["asset.inventory", "display.audio"]
+        )
 
     def test_do_execution_plan_assigns_composite_to_available_runtime(self) -> None:
         self._register_photo_runtimes()
@@ -1584,6 +1677,70 @@ class HomeBrainPersistTest(unittest.TestCase):
         self.assertEqual(pres["from"], "asset_ref")
         self.assertEqual(pres["asset_ref"]["type"], "document")
         self.assertEqual(pres["asset_ref"]["asset_id"], "asset_05563d7eb33dbf460a0be521")
+
+    def test_assemble_presentation_display_audio_returns_status_text(self) -> None:
+        """id=781: 「把最新的音频在小米电视上放出来」→ 回给发声端的是 status_text，
+        不是把同一个 audio asset 再在 iPhone 上播一遍（否则电视和手机双响）。"""
+        self._register_endpoint("living-room-iphone-1", "iphone")
+        self._heartbeat("living-room-iphone-1")
+        intent = {
+            "intent_id": 781,
+            "text": "把最新的音频在小米电视上放出来",
+            "source": "voice",
+            "edge_id": "living-room-iphone-1",
+            "execution_plan": [
+                {
+                    "step": 1,
+                    "capability": "asset.inventory",
+                    "output_constrict": {"asset_ref": {"type": "object"}},
+                },
+                {
+                    "step": 2,
+                    "capability": "display.audio",
+                    "output_constrict": {"status_text": {"type": "string"}},
+                },
+            ],
+            "ctx_param": {
+                "status_text": "已在小米电视播放最新音频",
+                "asset_ref": {
+                    "asset_id": "asset_a0c48dd24cbf98761db195f0",
+                    "type": "audio",
+                    "mime_type": "audio/mpeg",
+                },
+            },
+            "step_outputs": {
+                "2": {"status_text": "已在小米电视播放最新音频"},
+            },
+        }
+        pres = hb.assemble_presentation(intent)
+        self.assertIsNotNone(pres)
+        # 回给发声端的是「一句确认」，不是再播一遍同一个音频（否则电视+手机双响）。
+        self.assertEqual(pres["from"], "status_text")
+        self.assertEqual(pres["text"], "已在小米电视播放最新音频")
+        self.assertNotIn("asset_ref", pres)
+
+    def test_presentation_kind_display_audio_prefers_status_text(self) -> None:
+        """plan 里有 display.audio 时，presentation 走 status_text，不被 asset.inventory 抢走。"""
+        kind, field = hb._presentation_kind_from_plan(
+            {
+                "text": "把最新的音频在小米电视上放出来",
+                "source": "voice",
+                "execution_plan": [
+                    {
+                        "step": 1,
+                        "capability": "asset.inventory",
+                        "output_constrict": {"asset_ref": {"type": "object"}},
+                    },
+                    {
+                        "step": 2,
+                        "capability": "display.audio",
+                        "output_constrict": {"status_text": {"type": "string"}},
+                    },
+                ],
+            }
+        )
+        self.assertEqual(kind, "text")
+        self.assertEqual(field, "status_text")
 
     def test_normalize_presentation_plan_keeps_document(self) -> None:
         """#677: planner 的 document 骨架不能被归一化丢掉（prompt/schema 都列了 document）。"""
