@@ -6,6 +6,17 @@ Home Agent OS 的 **Brain 控制面**独立仓库。
 `5f5c0c6048f34f357ce1abddae2df0b74b45d051`），是一次**纯搬迁**：上游的 `server/` 与根入口
 `home_brain.py` 原样复制到本仓库，未修改任何逻辑。上游 `home-agent-os` 在拆分时保持不动。
 
+## 同步记录
+
+拆分之后上游 Brain 侧的改动按下表搬入本仓库（`server/` + 根 `home_brain.py` 与上游逐字节一致）：
+
+| 日期 | 上游范围 | 内容 |
+|------|----------|------|
+| 2026-09-18 | `5f5c0c6..37d9537` | `pdf.reader` / `paper.read` 能力广告与 schema；网易云登录失效的人类可读失败文案（仅 iPhone 发起端带登录链接）；`display.audio`（已有音频交给小米电视 DLNA 出声）及其 shortcut 规则、presentation、asset 盘点量词 |
+
+同步口径：只搬 `server/**` 与根 `home_brain.py`（本仓库既有边界），不带上游的
+`mac/`、`ios/`、`plugins/`、`docs/`、`agent_plans/` 等 Edge / 文档资产。
+
 ## 内容
 
 | 路径 | 说明 |
