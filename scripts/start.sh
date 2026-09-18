@@ -37,13 +37,17 @@ fi
 RUNTIME_DIR="${SELF_RUNTIME_DIR}"
 
 SERVER="${RUNTIME_DIR}/server"
+# 运行期可变文件一律放 <runtime>/backend/：平台部署是
+#   rsync -a --delete --filter='P backend/{.env,data/,runtime.pid,server.log,.watchdog-paused}'
+# 只有 backend/ 这几项（和 .git/）能活过部署，pid / 日志放别处每次部署都被清掉。
+BACKEND_DIR="${RUNTIME_DIR}/backend"
 VENV="${SERVER}/.venv"
 PY="${VENV}/bin/python"
-ENV_FILE="${SERVER}/.env"
+ENV_FILE="${BACKEND_DIR}/.env"
+ENV_FILE_LEGACY="${SERVER}/.env"
 REQ="${SERVER}/requirements.txt"
-LOG_DIR="${SERVER}/logs"
-PID_FILE="${LOG_DIR}/runtime.pid"
-LOG_FILE="${LOG_DIR}/brain.log"
+PID_FILE="${BACKEND_DIR}/runtime.pid"
+LOG_FILE="${BACKEND_DIR}/server.log"
 
 [ -d "${SERVER}" ] || die "缺少 ${SERVER}（runtime 布局应为 <runtime>/server）"
 command -v python3 >/dev/null 2>&1 || die "本机没有 python3"
@@ -56,7 +60,22 @@ if [ "${CONTRACT_PORT}" != "${BRAIN_PORT}" ]; then
   warn "或显式 BRAIN_PORT=… 启动（客户端与 mDNS 都按 ${BRAIN_PORT} 连，改监听口要同步改它们）。"
 fi
 
-[ -f "${ENV_FILE}" ] || die "缺少 ${ENV_FILE}（需要 ARK_API_KEY 等；模板见 ${SERVER}/.env.example），且不入 git"
+# .env（密钥 + 部署配置）以 backend/.env 为准：平台部署只保留 backend/ 下的运行期文件。
+# 老位置 server/.env 兼容：迁过来并把 server/.env 留成指向它的 symlink，
+# 这样当前 main 的代码（只读 server/.env）和本 PR 之后的代码（先读 backend/.env）都拿到同一份。
+if [ ! -f "${ENV_FILE}" ]; then
+  if [ -f "${ENV_FILE_LEGACY}" ]; then
+    mkdir -p "${BACKEND_DIR}"
+    log "把 ${ENV_FILE_LEGACY} 迁到 ${ENV_FILE}（部署只保 backend/）"
+    mv "${ENV_FILE_LEGACY}" "${ENV_FILE}"
+  else
+    die "缺少 ${ENV_FILE}（需要 ARK_API_KEY 等；模板见 ${SERVER}/.env.example），且不入 git"
+  fi
+fi
+chmod 600 "${ENV_FILE}" 2>/dev/null || true
+if [ ! -e "${ENV_FILE_LEGACY}" ]; then
+  ln -sfn "${ENV_FILE}" "${ENV_FILE_LEGACY}"
+fi
 
 # 依赖：Brain 需要 Flask（server/requirements.txt）。缺 venv 就现建，装不上退系统包。
 if [ ! -x "${PY}" ]; then
@@ -73,7 +92,7 @@ if ! "${PY}" -c 'import flask' >/dev/null 2>&1; then
 fi
 "${PY}" -c 'import flask' >/dev/null 2>&1 || die "venv 里没有 Flask，请联网后重跑本脚本"
 
-mkdir -p "${SERVER}/data" "${SERVER}/llm_logs" "${SERVER}/uploads" "${LOG_DIR}"
+mkdir -p "${BACKEND_DIR}" "${SERVER}/llm_logs" "${SERVER}/uploads"
 
 # 已在运行就不重复拉起（平台重启前都会先 stop；这里是防御性检查）。
 if [ -f "${PID_FILE}" ]; then

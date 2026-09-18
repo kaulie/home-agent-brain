@@ -194,6 +194,12 @@ def _load_dotenv(path: Path) -> None:
             os.environ[key] = val
 
 
+# .env 装载顺序（先加载的一方生效，后面的不会覆盖）：
+#   1) <runtime>/backend/.env —— 平台（agent-control-plane-deployment）只保留 backend/ 下的
+#      运行期文件（backend/{.env,data/,runtime.pid,server.log}），生产把密钥放这里；
+#   2) server/.env —— 老位置 / 本地开发；
+#   3) <repo>/.env —— 更老的兼容位置。
+_load_dotenv(_HERE.parent / "backend" / ".env")
 _load_dotenv(_HERE / ".env")
 if _HERE.name == "server":
     _load_dotenv(_HERE.parent / ".env")

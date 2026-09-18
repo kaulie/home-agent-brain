@@ -20,18 +20,22 @@ if [ -n "${RUNTIME_DIR:-}" ] && [ "${RUNTIME_DIR}" != "${SELF_RUNTIME_DIR}" ]; t
   log "忽略继承来的 RUNTIME_DIR=${RUNTIME_DIR}，按脚本位置用 ${SELF_RUNTIME_DIR}"
 fi
 RUNTIME_DIR="${SELF_RUNTIME_DIR}"
-PID_FILE="${RUNTIME_DIR}/server/logs/runtime.pid"
+# 运行期 pid 放 <runtime>/backend/（平台部署只保留 backend/{.env,data/,runtime.pid,server.log}）。
+PID_FILE="${RUNTIME_DIR}/backend/runtime.pid"
+# 过渡期：老布局把 pid 写在 server/logs/ 下，两个都看。
+LEGACY_PID_FILE="${RUNTIME_DIR}/server/logs/runtime.pid"
 
 PIDS=()
-if [ -f "${PID_FILE}" ]; then
-  pid="$(tr -d '[:space:]' < "${PID_FILE}" || true)"
+for pf in "${PID_FILE}" "${LEGACY_PID_FILE}"; do
+  [ -f "${pf}" ] || continue
+  pid="$(tr -d '[:space:]' < "${pf}" || true)"
   if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
     PIDS+=("${pid}")
   else
-    log "pid 文件里的 ${pid:-?} 已不存在，清理"
-    rm -f "${PID_FILE}"
+    log "pid 文件 ${pf} 里的 ${pid:-?} 已不存在，清理"
   fi
-fi
+  rm -f "${pf}"
+done
 
 if [ "${#PIDS[@]}" -eq 0 ] && command -v lsof >/dev/null 2>&1; then
   for cand in $(lsof -nP -iTCP:"${BRAIN_PORT}" -sTCP:LISTEN -t 2>/dev/null || true); do
