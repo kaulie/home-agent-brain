@@ -62,6 +62,45 @@ Python 3.10+，唯一三方依赖是 **Flask**（`server/requirements.txt`，`st
 | 数据 | `BRAIN_DATA_DIR`（本机生产：`/Users/gaolei/database/home-agent-brain`）= 库文件目录，见下 |
 | 日志 | `server/llm_logs/`（`BRAIN_LOG_DIR` 可覆盖）；启停日志 `server/logs/brain.log` |
 
+### 部署（agent-control-plane-deployment 规范）
+
+本仓按部署系统要求提供三样东西：`build.sh`（打包）、`scripts/{start,stop,restart}.sh`（服务契约的启停命令）、
+以及「运行期状态只放 `backend/`」的目录布局。
+
+| 项 | 约定 |
+|----|------|
+| 打包 | 仓库根 `build.sh`，cwd=仓库根、`APP_VERSION=<8位短hash>`；产出 `outputs/`，其中**必须**含 `scripts/restart.sh`；`VERSION`/`COMMIT`/`GIT_REPO_URL` 由平台写进发版包，本脚本不写 |
+| 发版包内容 | `outputs/{home_brain.py, README.md, .gitignore, scripts/*.sh, server/**}`（不含 `.venv`、`.env`、`data/`、`logs/`、`llm_logs/`、`uploads/`、`__pycache__`） |
+| 部署动作 | 平台把包 rsync 到 runtimeDir：`rsync -a --delete --filter='P backend/{.env,data/,runtime.pid,server.log,.watchdog-paused}' --exclude='.git/'` |
+| **能活过部署的东西** | `<runtime>/backend/{.env, data/, runtime.pid, server.log, .watchdog-paused}` 与 `<runtime>/.git/`；**其余一律按发版包覆盖** |
+| 端口 | 平台按契约注入 `SERVICE_PORT`（本服务 = 9527）→ `scripts/start.sh` 用它对照 Brain 监听口，不一致时响亮告警 |
+| 探活 | 部署后探 `healthUrl`；本服务 = `http://127.0.0.1:9527/health` |
+| graceful | 本服务暂未提供 `restartNotifyUrl`/`restartPollUrl`（平台走「直接 rsync + restart」）；要做 in-flight intent 的优雅重启需在 Brain 里加这两个端点 |
+
+因此运行期文件这样摆（部署不会被清掉）：
+
+```
+<runtime>/                          平台 runtimeDir
+├── build.sh  scripts/              来自发版包
+├── server/**                       Brain 源码（来自发版包）
+├── .git/                          clone（rsync 排除，保留）
+└── backend/                       ★ 平台唯一保留的运行期目录
+    ├── .env                       密钥 + 部署配置（BRAIN_DATA_DIR / BRAIN_LOG_DIR / BRAIN_UPLOAD_DIR）
+    ├── runtime.pid                start.sh 写
+    ├── server.log                 start.sh 写（Brain 自己的日志走 BRAIN_LOG_DIR）
+    └── data/.venv                 Python 依赖（Flask）安装在这里，部署不用重装
+```
+
+库 / 日志 / 上传字节都放**代码之外**（`BRAIN_DATA_DIR` 及 `BRAIN_LOG_DIR`、`BRAIN_UPLOAD_DIR` 指向它），
+所以 `--delete` 不会碰到家数据：
+
+```ini
+BRAIN_DATA_DIR=/Users/gaolei/database/home-agent-brain
+BRAIN_LOG_DIR=/Users/gaolei/database/home-agent-brain/llm_logs
+BRAIN_UPLOAD_DIR=/Users/gaolei/database/home-agent-brain/uploads/gopro
+```
+
+
 ### 数据目录（代码之外）
 
 `server/data_paths.py`：`BRAIN_DATA_DIR` > 单库 `*_PATH` 覆盖 > 历史默认 `<server>/data`。
@@ -72,8 +111,10 @@ Python 3.10+，唯一三方依赖是 **Flask**（`server/requirements.txt`，`st
 | `dev_console.sqlite3` | Dev Console / Dev Task / issue 库，`dev_console_db.py` |
 | `agent_tasks.json` / `debug_issues.json` | 旧 JSON 迁移源（已并入上面的库，保留兼容） |
 
-本机生产指向 `/Users/gaolei/database/home-agent-brain`（`server/.env` 的 `BRAIN_DATA_DIR`），
+本机生产指向 `/Users/gaolei/database/home-agent-brain`（`backend/.env` 的 `BRAIN_DATA_DIR`），
 所以换代码 / 重新部署不动数据；老的 `~/Projects/smart_home_control/server/data` 只是历史位置 + 冷备。
+`BRAIN_LOG_DIR`（Brain 运行日志）与 `BRAIN_UPLOAD_DIR`（Asset 原始字节）同理指向数据目录 ——
+放在 runtime 目录里会被每次部署的 `--delete` 清掉。
 
 
 ## 边界
