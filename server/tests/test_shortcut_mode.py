@@ -475,6 +475,32 @@ class ShortcutModeTest(unittest.TestCase):
                 self.assertEqual(plan[0]["input_constrict"].get("type"), "audio")
                 self.assertEqual(plan[1]["capability"], "display.audio")
 
+    def test_latest_audio_cast_routes_to_xiaodu(self) -> None:
+        """点名小度音箱 → xiaodu.play（intent 787 那次只排了 asset.inventory，小度没响）。"""
+        for text in (
+            "把最新的音频用小度音箱播放",
+            "用小度音箱播放最新的录音",
+            "让客厅音箱放一下最新的音频",
+        ):
+            with self.subTest(text=text):
+                plan = self._rule_hit(
+                    text, rule="latest_audio_cast", goal="xiaodu.play"
+                )
+                self.assertEqual(
+                    [s["capability"] for s in plan],
+                    ["asset.inventory", "xiaodu.play"],
+                )
+                self.assertEqual(plan[0]["input_constrict"].get("type"), "audio")
+                self.assertEqual(plan[1]["input_constrict"]["asset_ref"], "$asset_ref")
+                self.assertIn("status_text", plan[1]["output_constrict"])
+
+    def test_latest_audio_cast_television_still_wins_when_both_named(self) -> None:
+        """同时点名电视和小度时按「小度优先」会误判 —— 这里钉住：提到小度就走 xiaodu.play。"""
+        plan = self._rule_hit(
+            "把最新的音频用小度音箱播放", rule="latest_audio_cast", goal="xiaodu.play"
+        )
+        self.assertEqual(plan[1]["capability"], "xiaodu.play")
+
     def test_latest_audio_cast_leaves_music_and_video_alone(self) -> None:
         # 点歌 / 放歌归 music.*；视频、照片、PDF 各有自己的能力。
         for text in (

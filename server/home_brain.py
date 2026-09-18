@@ -326,6 +326,8 @@ _DISPLAY_CAPS = {"display.photo", "display.slideshow"}
 # 用户没点名电视时，这些「往电视上放东西」的步骤要剥掉（display.audio 不进
 # _DISPLAY_CAPS：那会牵动 image presentation 推导，见 _plan_wants_image_presentation）。
 _TV_GATED_CAPS = _DISPLAY_CAPS | {"display.audio"}
+# 用户没点名小度/音箱时，xiaodu.play 也要剥掉（否则会把音频放到客厅音箱上）
+_SPEAKER_PLAY_CAP = "xiaodu.play"
 _SPOKEN_PRESENTATION_FIELDS = frozenset(
     {
         "time_text",
@@ -478,6 +480,12 @@ def _is_wake_ack_utterance(text):
 
     compact = re.sub(r"[\s，。！？,.!?\"'“”‘’]", "", str(text or ""))
     return compact in wake_ack_utterances()
+
+
+def _user_asked_speaker(text):
+    """用户点名了小度/音箱（xiaodu.play 是「点名才排」的步骤）。"""
+    raw = str(text or "")
+    return any(k in raw for k in ("小度", "音箱", "小爱", "喇叭"))
 
 
 def _user_asked_tv(text):
@@ -1651,6 +1659,8 @@ def sanitize_execution_plan(plan, intent=None):
             continue
         if cap in _TV_GATED_CAPS and not asked_tv:
             continue
+        if cap == _SPEAKER_PLAY_CAP and not _user_asked_speaker(text):
+            continue
         cleaned.append(dict(step))
     has_capture = any(
         str(s.get("capability") or "") in ("camera.capture", "camera.capture_and_upload")
@@ -1912,8 +1922,8 @@ def _presentation_kind_from_plan(intent):
         return _voice_symmetric_presentation_kind(intent, "text", "answer_text")
     if "chat.smalltalk" in caps:
         return _voice_symmetric_presentation_kind(intent, "text", "reply")
-    if "display.audio" in caps:
-        # 电视出声是执行目标；回给发声端的是一句确认（语音 → TTS 念 status_text）。
+    if "display.audio" in caps or "xiaodu.play" in caps:
+        # 电视 / 小度出声是执行目标；回给发声端的是一句确认（语音 → TTS 念 status_text）。
         return _voice_symmetric_presentation_kind(intent, "text", "status_text")
     if "asset.inventory" in caps:
         if _plan_wants_document_presentation(intent):
