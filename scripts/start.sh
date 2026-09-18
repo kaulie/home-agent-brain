@@ -41,7 +41,9 @@ SERVER="${RUNTIME_DIR}/server"
 #   rsync -a --delete --filter='P backend/{.env,data/,runtime.pid,server.log,.watchdog-paused}'
 # 只有 backend/ 这几项（和 .git/）能活过部署，pid / 日志放别处每次部署都被清掉。
 BACKEND_DIR="${RUNTIME_DIR}/backend"
-VENV="${SERVER}/.venv"
+# venv 也放「能活过部署」的位置（backend/data/ 被平台保护）：否则每次部署都要重装 Flask。
+# 需要放别处时用 BRAIN_VENV 覆盖。
+VENV="${BRAIN_VENV:-${BACKEND_DIR}/data/.venv}"
 PY="${VENV}/bin/python"
 ENV_FILE="${BACKEND_DIR}/.env"
 ENV_FILE_LEGACY="${SERVER}/.env"
@@ -78,6 +80,7 @@ if [ ! -e "${ENV_FILE_LEGACY}" ]; then
 fi
 
 # 依赖：Brain 需要 Flask（server/requirements.txt）。缺 venv 就现建，装不上退系统包。
+mkdir -p "$(dirname "${VENV}")"
 if [ ! -x "${PY}" ]; then
   log "创建 venv ${VENV}"
   python3 -m venv "${VENV}" || die "python3 -m venv 失败"
@@ -90,10 +93,16 @@ if ! "${PY}" -c 'import flask' >/dev/null 2>&1; then
     python3 -m venv --system-site-packages "${VENV}" || die "重建 venv 失败"
   fi
 fi
+# 兜底：老 checkout 的 requirements.txt 里没有 Flask（历史上写着「无三方依赖」），
+# 装了却没有 Flask 时直接补装，避免部署卡在这一步。
+if ! "${PY}" -c 'import flask' >/dev/null 2>&1; then
+  warn "requirements.txt 没带来 Flask → 单独补装 Flask"
+  "${PY}" -m pip install -q --disable-pip-version-check 'Flask>=3.0,<4' \
+    || python3 -m venv --system-site-packages "${VENV}"
+fi
 "${PY}" -c 'import flask' >/dev/null 2>&1 || die "venv 里没有 Flask，请联网后重跑本脚本"
 
-mkdir -p "${BACKEND_DIR}" "${SERVER}/llm_logs" "${SERVER}/uploads"
-
+mkdir -p "${BACKEND_DIR}"
 # 已在运行就不重复拉起（平台重启前都会先 stop；这里是防御性检查）。
 if [ -f "${PID_FILE}" ]; then
   old="$(tr -d '[:space:]' < "${PID_FILE}" || true)"
