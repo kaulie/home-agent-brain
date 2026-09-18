@@ -67,4 +67,19 @@ for pid in "${PIDS[@]}"; do
 done
 
 rm -f "${PID_FILE}"
+
+# mDNS 广告是 Brain 拉起的 dns-sd 子进程：父进程一死它就变孤儿继续广告（历次重启会累积，
+# 实测攒了 9 个）。这里按 comm==dns-sd + 命令行含 _ha-brain._tcp 精确清理，不碰别的 dns-sd
+# （例如 img-server 的 _ha-img-server._tcp）；随后的 start.sh 会重新广告一个。
+cleanup_mdns_ads() {
+  command -v ps >/dev/null 2>&1 || return 0
+  local pids
+  pids="$(ps -Ao pid=,comm=,command= | awk '$2 == "dns-sd" && /_ha-brain\._tcp/ {print $1}')"
+  [ -n "${pids}" ] || return 0
+  log "清理孤儿 mDNS 广告：$(echo ${pids} | tr '\n' ' ')"
+  # shellcheck disable=SC2086
+  kill ${pids} 2>/dev/null || true
+}
+
+cleanup_mdns_ads
 log "已停止"
