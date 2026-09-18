@@ -12,3 +12,12 @@ server/uploads/
 *.sqlite3-shm
 .env
 .DS_Store
+
+# 部署系统（agent-control-plane-deployment）在 runtime 目录里的产物：
+# build.sh 的打包输出、平台写入的版本文件、只保留 backend/ 的运行期目录。
+outputs/
+backend/
+VERSION
+COMMIT
+DEPLOYMENT
+GIT_REPO_URL
