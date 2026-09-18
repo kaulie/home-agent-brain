@@ -16,12 +16,19 @@ from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
+
+try:
+    from data_paths import data_file
+except ImportError:  # pragma: no cover - package import (server.data_paths)
+    from .data_paths import data_file  # type: ignore
 from typing import Any, Iterator
 
 log = logging.getLogger("brain_db")
 
 _SQL_DIR = Path(__file__).resolve().parent / "sql"
-_DEFAULT_DB = Path(__file__).resolve().parent / "data" / "brain.sqlite3"
+# <BRAIN_DATA_DIR|server/data>/brain.sqlite3 —— 见 data_paths.py（懒算，别在模块顶层固化）。
+def default_db_path() -> Path:
+    return data_file("brain.sqlite3")
 
 _lock = threading.RLock()
 # Bumped on every heartbeat/registration write. home_brain's capability-map
@@ -42,7 +49,7 @@ def db_path() -> Path:
     env = (os.environ.get("BRAIN_DB_PATH") or "").strip()
     if env:
         return Path(env).expanduser().resolve()
-    canonical = _DEFAULT_DB
+    canonical = default_db_path()
     legacy = Path(__file__).resolve().parent.parent / "data" / "brain.sqlite3"
     if not canonical.exists() and legacy.exists():
         return legacy.resolve()

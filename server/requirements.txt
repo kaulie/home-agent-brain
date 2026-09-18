@@ -1,1 +1,4 @@
-# No third-party dependencies. Requires Python 3.10+.
+# Brain 控制面依赖：Flask（唯一三方依赖，Werkzeug/Jinja2 等由它带上）。
+# 安装：python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+# （scripts/start.sh 会自动做这件事）
+Flask>=3.0,<4

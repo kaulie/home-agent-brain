@@ -16,9 +16,26 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-_DEFAULT_DB = Path(__file__).resolve().parent / "data" / "dev_console.sqlite3"
-_LEGACY_TASKS_JSON = Path(__file__).resolve().parent / "data" / "agent_tasks.json"
-_LEGACY_ISSUES_JSON = Path(__file__).resolve().parent / "data" / "debug_issues.json"
+try:
+    from data_paths import data_file
+except ImportError:  # pragma: no cover - package import (server.data_paths)
+    from .data_paths import data_file  # type: ignore
+
+
+# 都跟着 BRAIN_DATA_DIR 走（见 data_paths.py），不在模块顶层固化：home_brain 先
+# import 本模块、后加载 .env。
+def default_db_path() -> Path:
+    return data_file("dev_console.sqlite3")
+
+
+def _legacy_tasks_json() -> Path:
+    return data_file("agent_tasks.json")
+
+
+def _legacy_issues_json() -> Path:
+    return data_file("debug_issues.json")
+
+
 _LEGACY_CHAT_DB = Path(__file__).resolve().parents[1] / "chat" / "data" / "agent_chat.sqlite3"
 
 _lock = threading.RLock()
@@ -32,7 +49,7 @@ def db_path() -> Path:
     env = (os.environ.get("DEV_CONSOLE_DB_PATH") or "").strip()
     if env:
         return Path(env).expanduser().resolve()
-    return _DEFAULT_DB
+    return default_db_path()
 
 
 def reset(*, path: Path | None = None) -> None:
@@ -413,24 +430,24 @@ def has_asset_grant(asset_id: str, scope: str) -> bool:
 def migrate_legacy_json_once() -> None:
     if meta_get("legacy_json_migrated") == "1":
         return
-    if db_path().resolve() != _DEFAULT_DB.resolve():
+    if db_path().resolve() != default_db_path().resolve():
         meta_set("legacy_json_migrated", "1")
         return
     with locked():
         conn = _connect()
         task_count = int(conn.execute("SELECT COUNT(*) FROM dev_tasks").fetchone()[0])
         issue_count = int(conn.execute("SELECT COUNT(*) FROM debug_issues").fetchone()[0])
-    if task_count == 0 and _LEGACY_TASKS_JSON.is_file():
+    if task_count == 0 and _legacy_tasks_json().is_file():
         try:
-            raw = json.loads(_LEGACY_TASKS_JSON.read_text(encoding="utf-8"))
+            raw = json.loads(_legacy_tasks_json().read_text(encoding="utf-8"))
             rows = raw.get("tasks") or []
             if isinstance(rows, list) and rows:
                 _import_dev_tasks(rows, int(raw.get("next_id") or 1))
         except (json.JSONDecodeError, OSError, TypeError, ValueError):
             pass
-    if issue_count == 0 and _LEGACY_ISSUES_JSON.is_file():
+    if issue_count == 0 and _legacy_issues_json().is_file():
         try:
-            raw = json.loads(_LEGACY_ISSUES_JSON.read_text(encoding="utf-8"))
+            raw = json.loads(_legacy_issues_json().read_text(encoding="utf-8"))
             rows = raw.get("issues") or []
             if isinstance(rows, list) and rows:
                 _import_debug_issues(rows, int(raw.get("next_id") or 1))
@@ -442,7 +459,7 @@ def migrate_legacy_json_once() -> None:
 def migrate_legacy_chat_once() -> None:
     if meta_get("legacy_chat_migrated") == "1":
         return
-    if db_path().resolve() != _DEFAULT_DB.resolve():
+    if db_path().resolve() != default_db_path().resolve():
         meta_set("legacy_chat_migrated", "1")
         return
     with locked():
