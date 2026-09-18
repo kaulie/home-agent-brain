@@ -19,10 +19,22 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RUNTIME_DIR="${RUNTIME_DIR:-$(cd "${DIR}/.." && pwd)}"
+# runtime 目录以**脚本自身位置**为准：平台调用的就是 <runtime>/scripts/start.sh 绝对路径。
+# 不要信交互式 shell 里继承来的 RUNTIME_DIR —— 那可能是别的服务（实测残留过 web-cursor），
+# 照它走会去别的服务目录里找 server/。
+SELF_RUNTIME_DIR="$(cd "${DIR}/.." && pwd)"
 BRAIN_PORT="${BRAIN_PORT:-9527}"
 CONTRACT_PORT="${SERVICE_PORT:-${PORT:-${BRAIN_PORT}}}"
 APP_VERSION="${APP_VERSION:-dev}"
+
+log() { echo "[start] $*"; }
+warn() { echo "[start][警告] $*" >&2; }
+die() { echo "[start][错误] $*" >&2; exit 1; }
+
+if [ -n "${RUNTIME_DIR:-}" ] && [ "${RUNTIME_DIR}" != "${SELF_RUNTIME_DIR}" ]; then
+  warn "忽略继承来的 RUNTIME_DIR=${RUNTIME_DIR}，按脚本位置用 ${SELF_RUNTIME_DIR}"
+fi
+RUNTIME_DIR="${SELF_RUNTIME_DIR}"
 
 SERVER="${RUNTIME_DIR}/server"
 VENV="${SERVER}/.venv"
@@ -32,10 +44,6 @@ REQ="${SERVER}/requirements.txt"
 LOG_DIR="${SERVER}/logs"
 PID_FILE="${LOG_DIR}/runtime.pid"
 LOG_FILE="${LOG_DIR}/brain.log"
-
-log() { echo "[start] $*"; }
-warn() { echo "[start][警告] $*" >&2; }
-die() { echo "[start][错误] $*" >&2; exit 1; }
 
 [ -d "${SERVER}" ] || die "缺少 ${SERVER}（runtime 布局应为 <runtime>/server）"
 command -v python3 >/dev/null 2>&1 || die "本机没有 python3"

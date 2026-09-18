@@ -10,11 +10,17 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RUNTIME_DIR="${RUNTIME_DIR:-$(cd "${DIR}/.." && pwd)}"
+# runtime 目录以脚本自身位置为准（同 start.sh：不认继承来的 RUNTIME_DIR）。
+SELF_RUNTIME_DIR="$(cd "${DIR}/.." && pwd)"
 BRAIN_PORT="${BRAIN_PORT:-9527}"
-PID_FILE="${RUNTIME_DIR}/server/logs/runtime.pid"
 
 log() { echo "[stop] $*"; }
+
+if [ -n "${RUNTIME_DIR:-}" ] && [ "${RUNTIME_DIR}" != "${SELF_RUNTIME_DIR}" ]; then
+  log "忽略继承来的 RUNTIME_DIR=${RUNTIME_DIR}，按脚本位置用 ${SELF_RUNTIME_DIR}"
+fi
+RUNTIME_DIR="${SELF_RUNTIME_DIR}"
+PID_FILE="${RUNTIME_DIR}/server/logs/runtime.pid"
 
 PIDS=()
 if [ -f "${PID_FILE}" ]; then
