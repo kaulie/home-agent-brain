@@ -306,6 +306,73 @@ def match_latest_audio_cast(text: str) -> RuleHit | None:
     )
 
 
+_AUDIO_CONTROL_ACTIONS = (
+    # 顺序重要：先 stop/暂停再看继续（「停止播放」里含「播放」；「继续播放」里含「播放」）
+    ("stop", ("停止小度", "停止电视", "停掉", "别放了", "不听了", "关掉", "关一下", "停止播放", "停止")),
+    ("pause", ("暂停", "停一下", "先停", "别念了")),
+    ("resume", ("继续播放", "继续", "接着放", "接着播", "恢复播放", "恢复", "往下放")),
+)
+# 点名的播放目标 → 控制能力（与 latest_audio_cast 同一套目标语义）
+_AUDIO_CONTROL_TARGETS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("小度", "音箱", "喇叭"), "xiaodu.control"),
+    (("电视", "投屏"), "display.audio.control"),
+)
+# 「歌/音乐」归 music.*（music.pause/resume/stop 走自己的规则），本规则不截胡
+_AUDIO_CONTROL_EXCLUDE = (
+    "歌", "音乐", "歌曲", "歌单", "专辑", "歌手",
+    # 电视上的画面操作归 tv_pdf_page / tv_pdf_zoom（「电视恢复原图」不能被当成 resume）
+    "原图", "放大", "缩小", "上一页", "下一页", "翻页", "第几页", "多少页",
+)
+
+
+def match_audio_control(text: str) -> RuleHit | None:
+    """「暂停小度 / 停止小度播放 / 电视继续播放」→ 传输控制（pause|resume|stop）。
+
+    只认**点名设备**的说法：没点名就不拦（「暂停」可能是 netease music 那条链路，
+    交给 LLM 按上下文判断）。歌/音乐类说法也不拦，让 music.* 规则处理。
+    """
+    t0 = time.perf_counter()
+    utterance = _rstrip_punct(_lstrip_courtesy(str(text or "").strip()))
+    if not utterance:
+        return None
+    if matches_any(utterance, _AUDIO_CONTROL_EXCLUDE):
+        return None
+
+    target_capability = ""
+    for hints, capability in _AUDIO_CONTROL_TARGETS:
+        if matches_any(utterance, hints):
+            target_capability = capability
+            break
+    if not target_capability:
+        return None
+
+    action = ""
+    for candidate, hints in _AUDIO_CONTROL_ACTIONS:
+        if matches_any(utterance, hints):
+            action = candidate
+            break
+    if not action:
+        return None
+
+    plan = [
+        {
+            "step": 1,
+            "capability": target_capability,
+            "input_constrict": {"action": action},
+            "output_constrict": {"status_text": {}},
+        }
+    ]
+    match_ms = int(round((time.perf_counter() - t0) * 1000))
+    return RuleHit(
+        rule="audio_control",
+        goal=target_capability,
+        plan=plan,
+        # 语音发起时 TTS 念 status_text（如「小度音箱已暂停」）
+        presentation={"type": "text", "from": "status_text"},
+        match_ms=match_ms,
+    )
+
+
 _TV_PDF_HINT = "电视"
 _TV_PDF_PREV = ("上一页", "上页", "往前翻", "向前翻")
 _TV_PDF_NEXT = ("下一页", "下页", "往后翻", "向后翻")
@@ -407,6 +474,7 @@ def match_rules(text: str) -> RuleHit | None:
         match_climate,
         match_photo_latest,
         match_latest_audio_cast,
+        match_audio_control,
         match_tv_pdf_page,
         match_tv_pdf_zoom,
     ):

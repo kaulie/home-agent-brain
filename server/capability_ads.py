@@ -648,6 +648,20 @@ ADS: dict[str, dict[str, Any]] = {
         typical_triggers=["把最新的音频用小度音箱播放", "让小度音箱放这段音频", "小度播放最新的录音", "用客厅音箱放这段音频"],
         do_not_dispatch=["念一段文案", "投屏", "点歌放歌", "Mac 本机播报", "TTS 生成"],
     ),
+    "xiaodu.control": _ad(
+        kind="output",
+        role="小度音箱播放控制器",
+        planner_recognize="暂停 / 继续 / 停止**小度音箱当前正在播放的内容**（DLNA AVTransport）。入参 action=pause（默认）/ resume / stop，也接受 暂停/继续/停止 等中文。只控制「正在放的那段」，不放新内容（那是 xiaodu.play）、不念文案（xiaodu.speak）",
+        typical_triggers=["暂停小度", "停止小度播放", "小度先停一下", "继续小度播放", "别放了"],
+        do_not_dispatch=["放新闻频", "点歌放歌", "念一段文案", "投屏", "Mac 本机播报"],
+    ),
+    "display.audio.control": _ad(
+        kind="output",
+        role="电视音频播放控制器",
+        planner_recognize="暂停 / 继续 / 停止**小米电视当前正在播的音频**（display.audio 播出去的那段）。入参 action=pause（默认）/ resume / stop，也接受 暂停/继续/停止 等中文。不放新内容、不投屏、不投 PDF",
+        typical_triggers=["暂停电视播放", "把电视上的音频停掉", "电视继续播放", "电视上的声音停一下"],
+        do_not_dispatch=["打开 PDF", "投屏新文档", "打印", "单图投屏", "放大缩小"],
+    ),
     "music.recognize": _ad(
         kind="action",
         role="识曲器（听歌识曲）",
