@@ -32,11 +32,49 @@ Home Agent OS 的 **Brain 控制面**独立仓库。
 ## 运行
 
 ```bash
-export ARK_API_KEY=...
-cd server && python home_brain.py   # 等价：python brain_app.py
+# 一次性：.env（含 ARK_API_KEY，不入 git）+ 依赖
+cp server/.env.example server/.env   # 填 ARK_API_KEY
+python3 -m venv server/.venv && server/.venv/bin/pip install -r server/requirements.txt
+
+# 启动（runtime 目录里就是这套脚本，部署平台也按它调）
+bash scripts/start.sh      # 或 bash scripts/restart.sh / bash scripts/stop.sh
+# 等价的手工方式：cd server && BRAIN_ORIGIN=lan python home_brain.py
 ```
 
-Python 3.10+，无第三方依赖。协议、路由、能力契约详见 [`server/README.md`](server/README.md)。
+Python 3.10+，唯一三方依赖是 **Flask**（`server/requirements.txt`，`start.sh` 会自动装）。
+协议、路由、能力契约详见 [`server/README.md`](server/README.md)。
+
+### runtime 布局与端口（部署平台契约）
+
+```
+<runtime>/                     部署平台 runtimeDir（本仓 clone，只放代码）
+├── scripts/{start,stop,restart}.sh   平台调用的启停脚本
+└── server/
+    ├── .venv/  .env  logs/          运行期（.gitignore，平台部署时保留）
+    ├── uploads/                     本机上传的 Asset 原始字节（.gitignore）
+    └── data/                        仅当没设 BRAIN_DATA_DIR 时的历史默认库位置
+```
+
+| 项 | 值 |
+|----|-----|
+| 监听 | `0.0.0.0:9527`（唯一端口：Mac Edge / iPhone / 小度 与 mDNS `_ha-brain._tcp` 都按它连） |
+| 健康 | `GET http://127.0.0.1:9527/health` —— 平台服务设置里的 `port`/`healthUrl` 必须是 **9527**，被注入别的端口时 `start.sh` 会响亮告警 |
+| 数据 | `BRAIN_DATA_DIR`（本机生产：`/Users/gaolei/database/home-agent-brain`）= 库文件目录，见下 |
+| 日志 | `server/llm_logs/`（`BRAIN_LOG_DIR` 可覆盖）；启停日志 `server/logs/brain.log` |
+
+### 数据目录（代码之外）
+
+`server/data_paths.py`：`BRAIN_DATA_DIR` > 单库 `*_PATH` 覆盖 > 历史默认 `<server>/data`。
+
+| 文件 | 说明 |
+|------|------|
+| `brain.sqlite3` | 主库（jobs/participants/assets/registrations…），`db.py` |
+| `dev_console.sqlite3` | Dev Console / Dev Task / issue 库，`dev_console_db.py` |
+| `agent_tasks.json` / `debug_issues.json` | 旧 JSON 迁移源（已并入上面的库，保留兼容） |
+
+本机生产指向 `/Users/gaolei/database/home-agent-brain`（`server/.env` 的 `BRAIN_DATA_DIR`），
+所以换代码 / 重新部署不动数据；老的 `~/Projects/smart_home_control/server/data` 只是历史位置 + 冷备。
+
 
 ## 边界
 

@@ -10,6 +10,11 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+try:
+    from data_paths import data_file
+except ImportError:  # pragma: no cover - package import (server.data_paths)
+    from .data_paths import data_file  # type: ignore
+
 _TERMINAL = frozenset({"succeeded", "failed", "error", "cancelled"})
 
 
@@ -17,7 +22,7 @@ def _default_path() -> Path:
     env = (os.environ.get("AGENT_TASK_DATA_PATH") or "").strip()
     if env:
         return Path(env).expanduser().resolve()
-    return Path(__file__).resolve().parent / "data" / "agent_tasks.json"
+    return data_file("agent_tasks.json")
 
 
 @dataclass
