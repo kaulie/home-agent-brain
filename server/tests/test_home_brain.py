@@ -732,6 +732,54 @@ class HomeBrainPersistTest(unittest.TestCase):
             [s["capability"] for s in with_tv], ["asset.inventory", "display.audio"]
         )
 
+    def test_sanitize_gates_xiaodu_play_on_speaker_request(self) -> None:
+        """LLM 自己排了 xiaodu.play 时：用户没点名小度/音箱 → 剥掉。"""
+        plan = [
+            {
+                "step": 1,
+                "capability": "asset.inventory",
+                "input_constrict": {"type": "audio"},
+            },
+            {
+                "step": 2,
+                "capability": "xiaodu.play",
+                "input_constrict": {"asset_ref": "$asset_ref"},
+            },
+        ]
+        without_speaker = hb.sanitize_execution_plan(
+            plan, {"text": "把最新的音频放出来", "source": "voice"}
+        )
+        self.assertEqual(
+            [s["capability"] for s in without_speaker], ["asset.inventory"]
+        )
+        with_speaker = hb.sanitize_execution_plan(
+            plan, {"text": "把最新的音频用小度音箱播放", "source": "voice"}
+        )
+        self.assertEqual(
+            [s["capability"] for s in with_speaker], ["asset.inventory", "xiaodu.play"]
+        )
+
+    def test_presentation_kind_xiaodu_play_uses_status_text(self) -> None:
+        kind, field = hb._presentation_kind_from_plan(
+            {
+                "text": "把最新的音频用小度音箱播放",
+                "source": "voice",
+                "execution_plan": [
+                    {
+                        "step": 1,
+                        "capability": "asset.inventory",
+                        "output_constrict": {"asset_ref": {"type": "object"}},
+                    },
+                    {
+                        "step": 2,
+                        "capability": "xiaodu.play",
+                        "output_constrict": {"status_text": {"type": "string"}},
+                    },
+                ],
+            }
+        )
+        self.assertEqual(field, "status_text")
+
     def test_do_execution_plan_assigns_composite_to_available_runtime(self) -> None:
         self._register_photo_runtimes()
         iid = hb.new_intent(

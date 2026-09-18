@@ -237,7 +237,9 @@ def match_photo_latest(text: str) -> RuleHit | None:
 
 
 _AUDIO_CAST_NOUNS = ("音频", "录音", "语音")
-_AUDIO_CAST_HINTS = (
+# 播放目标：电视（小米电视 DLNA）或小度音箱（DuerOS DLNA）—— 两者都是 DLNA 渲染器，
+# 但能力不同名（display.audio / xiaodu.play），所以规则按用户点名的设备来选步。
+_AUDIO_TV_HINTS = (
     "在电视上",
     "电视上",
     "投到电视",
@@ -246,6 +248,7 @@ _AUDIO_CAST_HINTS = (
     "电视播放",
     "电视里放",
 )
+_AUDIO_XIAODU_HINTS = ("小度", "音箱", "小度音箱", "客厅音箱")
 _AUDIO_LATEST_HINTS = ("最新", "最后", "刚才", "最近", "上一条", "上一个")
 # 「歌/音乐」归 music.*，「视频/照片/PDF」各有自己的能力，不允许被本规则截胡。
 _AUDIO_CAST_EXCLUDE = (
@@ -262,9 +265,11 @@ _AUDIO_CAST_EXCLUDE = (
 
 
 def match_latest_audio_cast(text: str) -> RuleHit | None:
-    """「把最新的音频在小米电视上放出来」→ asset.inventory(type=audio) + display.audio。
+    """「把最新的音频在小米电视上放出来 / 用小度音箱播放」→ 盘点 audio + 播放。
 
-    规则只认「音频/录音 + 最新 + 电视」这一族说法，其余仍走 LLM 规划。
+    规则只认「音频/录音 + 最新 + 点名设备（电视 / 小度音箱）」，其余仍走 LLM 规划。
+    目标是电视 → `display.audio`（小米电视 DLNA 出声）；目标是小度 → `xiaodu.play`
+    （小度音箱 DLNA 播放已有音频，不是 xiaodu.speak 那种「念一段文案」）。
     """
     t0 = time.perf_counter()
     utterance = _rstrip_punct(_lstrip_courtesy(str(text or "").strip()))
@@ -272,7 +277,11 @@ def match_latest_audio_cast(text: str) -> RuleHit | None:
         return None
     if matches_any(utterance, _AUDIO_CAST_EXCLUDE):
         return None
-    if not matches_any(utterance, _AUDIO_CAST_HINTS):
+    if matches_any(utterance, _AUDIO_XIAODU_HINTS):
+        target_capability = "xiaodu.play"
+    elif matches_any(utterance, _AUDIO_TV_HINTS):
+        target_capability = "display.audio"
+    else:
         return None
     if not matches_any(utterance, _AUDIO_LATEST_HINTS):
         return None
@@ -281,7 +290,7 @@ def match_latest_audio_cast(text: str) -> RuleHit | None:
         _inventory_step("audio"),
         {
             "step": 2,
-            "capability": "display.audio",
+            "capability": target_capability,
             "input_constrict": {"asset_ref": "$asset_ref"},
             "output_constrict": {"status_text": {}},
         },
@@ -289,9 +298,9 @@ def match_latest_audio_cast(text: str) -> RuleHit | None:
     match_ms = int(round((time.perf_counter() - t0) * 1000))
     return RuleHit(
         rule="latest_audio_cast",
-        goal="display.audio",
+        goal=target_capability,
         plan=plan,
-        # 语音发起时 TTS 念 status_text（如「已在小米电视播放最新音频」）
+        # 语音发起时 TTS 念 status_text（如「已在小度音箱播放最新音频」）
         presentation={"type": "text", "from": "status_text"},
         match_ms=match_ms,
     )
