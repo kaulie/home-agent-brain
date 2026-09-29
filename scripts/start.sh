@@ -79,11 +79,53 @@ if [ ! -e "${ENV_FILE_LEGACY}" ]; then
   ln -sfn "${ENV_FILE}" "${ENV_FILE_LEGACY}"
 fi
 
+env_val() {
+  local key="$1"
+  local raw
+  raw="$(grep -E "^${key}=" "${ENV_FILE}" | tail -1 || true)"
+  raw="${raw#"${key}"=}"
+  raw="${raw#\"}"
+  raw="${raw%\"}"
+  raw="${raw#\'}"
+  raw="${raw%\'}"
+  printf '%s' "${raw}"
+}
+
+# 平台 rsync 会删掉 server/data/；backend/data/ 才保留。新机器 .env 若没写
+# BRAIN_DATA_DIR，库会落在 server/data，下次部署被清掉，进程以「缺 schema」秒退。
+if ! grep -qE '^BRAIN_DATA_DIR=.+' "${ENV_FILE}"; then
+  echo "BRAIN_DATA_DIR=${BACKEND_DIR}/data" >> "${ENV_FILE}"
+  log "首次部署：未指定 BRAIN_DATA_DIR，已写入 ${BACKEND_DIR}/data（rsync 会保留）"
+fi
+BRAIN_DATA_DIR="$(env_val BRAIN_DATA_DIR)"
+export BRAIN_DATA_DIR
+mkdir -p "${BRAIN_DATA_DIR}"
+BRAIN_LOG="${SERVER}/llm_logs/brain.log"
+if grep -qE '^BRAIN_LOG_DIR=.+' "${ENV_FILE}"; then
+  BRAIN_LOG_DIR="$(env_val BRAIN_LOG_DIR)"
+  export BRAIN_LOG_DIR
+  BRAIN_LOG="${BRAIN_LOG_DIR}/brain.log"
+fi
+
+dump_logs() {
+  echo "--- ${LOG_FILE} ---" >&2
+  tail -30 "${LOG_FILE}" 2>/dev/null >&2 || true
+  if [ -f "${BRAIN_LOG}" ]; then
+    echo "--- ${BRAIN_LOG} ---" >&2
+    tail -30 "${BRAIN_LOG}" >&2 || true
+  fi
+}
+
 # 依赖：Brain 需要 Flask（server/requirements.txt）。缺 venv 就现建，装不上退系统包。
 mkdir -p "$(dirname "${VENV}")"
 if [ ! -x "${PY}" ]; then
   log "创建 venv ${VENV}"
   python3 -m venv "${VENV}" || die "python3 -m venv 失败"
+fi
+# Ubuntu 的 python3 -m venv 经常不带 pip（没装 python3-venv/ensurepip）。
+if ! "${PY}" -m pip --version >/dev/null 2>&1; then
+  warn "venv 没有 pip → ensurepip"
+  "${PY}" -m ensurepip --upgrade >/dev/null 2>&1 || true
 fi
 if ! "${PY}" -c 'import flask' >/dev/null 2>&1; then
   log "安装依赖（$(basename "${REQ}")）"
@@ -101,6 +143,22 @@ if ! "${PY}" -c 'import flask' >/dev/null 2>&1; then
     || python3 -m venv --system-site-packages "${VENV}"
 fi
 "${PY}" -c 'import flask' >/dev/null 2>&1 || die "venv 里没有 Flask，请联网后重跑本脚本"
+
+# 空库 / 失败启动留下的无表 sqlite：home_brain.py 会 SystemExit，日志只进 brain.log。
+# 与 LAN 脚本 deploy_lan_brain.sh 一样，缺 schema 时跑一次 db.py init（已有表则 migrate 幂等）。
+if ! "${PY}" -c "
+import os, sqlite3
+from pathlib import Path
+p = Path(os.environ.get('BRAIN_DB_PATH') or (os.environ['BRAIN_DATA_DIR'] + '/brain.sqlite3'))
+if not p.is_file():
+    raise SystemExit(1)
+c = sqlite3.connect(str(p))
+row = c.execute(\"SELECT 1 FROM sqlite_master WHERE type='table' AND name='participants'\").fetchone()
+raise SystemExit(0 if row else 1)
+"; then
+  log "空库或缺 schema → python db.py init（${BRAIN_DATA_DIR}）"
+  (cd "${SERVER}" && "${PY}" db.py init) || die "db.py init 失败"
+fi
 
 mkdir -p "${BACKEND_DIR}"
 # 已在运行就不重复拉起（平台重启前都会先 stop；这里是防御性检查）。
@@ -123,9 +181,9 @@ if command -v lsof >/dev/null 2>&1; then
 fi
 
 log "启动 部署版本=${APP_VERSION} 监听=0.0.0.0:${BRAIN_PORT} runtime=${RUNTIME_DIR}"
-log "数据目录看 ${ENV_FILE} 的 BRAIN_DATA_DIR（未设置则 ${SERVER}/data）"
+log "数据目录=${BRAIN_DATA_DIR}"
 cd "${SERVER}"
-nohup env BRAIN_ORIGIN="${BRAIN_ORIGIN:-lan}" "${PY}" home_brain.py >> "${LOG_FILE}" 2>&1 &
+nohup env BRAIN_ORIGIN="${BRAIN_ORIGIN:-lan}" BRAIN_DATA_DIR="${BRAIN_DATA_DIR}" "${PY}" home_brain.py >> "${LOG_FILE}" 2>&1 &
 echo $! > "${PID_FILE}"
 pid="$(cat "${PID_FILE}")"
 
@@ -133,7 +191,7 @@ for _ in $(seq 1 60); do
   if ! kill -0 "${pid}" 2>/dev/null; then
     rm -f "${PID_FILE}"
     echo "[start][错误] 进程已退出，最近日志：" >&2
-    tail -30 "${LOG_FILE}" >&2 || true
+    dump_logs
     exit 1
   fi
   if curl -fsS -m 2 "http://127.0.0.1:${BRAIN_PORT}/health" >/dev/null 2>&1; then
@@ -144,7 +202,7 @@ for _ in $(seq 1 60); do
 done
 
 echo "[start][错误] 30s 内 /health 未就绪，最近日志：" >&2
-tail -30 "${LOG_FILE}" >&2 || true
+dump_logs
 kill "${pid}" 2>/dev/null || true
 rm -f "${PID_FILE}"
 exit 1
