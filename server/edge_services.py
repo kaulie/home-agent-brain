@@ -584,6 +584,49 @@ KNOWN_CAPABILITIES: dict[str, dict[str, Any]] = {
             },
         },
     },
+    'xiaodu.play': {
+        'kind': 'output',
+        'group': 'notify',
+        'service_id': 'xiaodu.play',
+        'role': '小度音箱音频播放器',
+        'planner_recognize': '把一条可拉流的 http(s) 音频 URL 交给客厅小度 DLNA 播放',
+        'typical_triggers': ['用小度音箱播放歌曲十年', '用小度播放', '把最新的音频用小度音箱播放'],
+        'do_not_dispatch': ['本机网易云开播', '念一段文案', '投屏', 'Mac 本机播报', 'TTS 生成'],
+        'input_schema': {
+            'url': {
+                'type': 'string',
+                'required': False,
+                'description': '可拉流的 http(s) 音频地址；有则直接交给小度',
+            },
+            'song': {
+                'type': 'string',
+                'required': False,
+                'description': '歌名；无 url 时先解析出音频 URL 再交给小度',
+            },
+            'artist': {
+                'type': 'string',
+                'required': False,
+                'description': '歌手，仅收窄搜索',
+            },
+            'asset_ref': {
+                'type': 'string',
+                'required': False,
+                'description': 'AssetRef JSON {asset_id, type: "audio", mime_type?}。常为 $asset_ref。',
+            },
+        },
+        'output_schema': {
+            'status_text': {
+                'type': 'string',
+                'required': True,
+                'description': '中文一句话，如「已在小度音箱播放最新音频」',
+            },
+            'asset_id': {
+                'type': 'string',
+                'required': False,
+                'description': '实际播放的 audio asset_id',
+            },
+        },
+    },
     'xiaodu.speak': {
         'kind': 'output',
         'group': 'notify',
