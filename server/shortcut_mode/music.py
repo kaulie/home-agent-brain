@@ -97,6 +97,25 @@ _COURTESY_PREFIXES = (
     "请",
 )
 
+# Longer first. Strip before play-prefix matching so
+# 「用小度音箱播放歌曲10」→ song=「10」, speaker=xiaodu
+# instead of STRONG_TRIGGER「播放歌曲」with empty song.
+_SPEAKER_PREFIXES = (
+    "用小度音箱",
+    "用小度音响",
+    "在小度音箱上",
+    "在小度音响上",
+    "在小度音箱",
+    "在小度音响",
+    "在小度上",
+    "让小度音箱",
+    "让小度音响",
+    "让小度",
+    "用小度",
+    "小度音箱",
+    "小度音响",
+)
+
 _EXCLUDE = (
     "幻灯片",
     "幻灯",
@@ -116,6 +135,7 @@ class MusicPlayHit:
     user_input: str
     match_ms: int
     count: int | None = None
+    speaker: str | None = None
 
 
 @dataclass(frozen=True)
@@ -147,6 +167,30 @@ def _lstrip_courtesy(text: str) -> str:
         if nxt == rest:
             return rest
         rest = nxt
+
+
+def _lstrip_speaker(text: str) -> tuple[str, str | None]:
+    """Strip a leading Xiaodu output-device phrase.
+
+    Returns (remainder, speaker). speaker is ``xiaodu`` when the user
+    named 小度 as the speaker; otherwise None.
+    Bare 「小度」only counts when the remainder is a play utterance.
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return raw, None
+    for prefix in _SPEAKER_PREFIXES:
+        if prefix and raw.startswith(prefix):
+            rest = raw[len(prefix) :].lstrip("上的 ，,")
+            return rest, "xiaodu"
+    if raw.startswith("小度"):
+        rest = raw[2:].lstrip("上的 ，,")
+        if rest and (
+            _remainder_after_play_prefix(rest)[0]
+            or matches_any(rest, STRONG_TRIGGERS)
+        ):
+            return rest, "xiaodu"
+    return raw, None
 
 
 def _remainder_after_play_prefix(text: str) -> tuple[str, str]:
@@ -240,8 +284,14 @@ def match_play(text: str) -> MusicPlayHit | None:
     stripped = _rstrip_punct(_lstrip_courtesy(utterance))
     if not stripped:
         return None
+    stripped, speaker = _lstrip_speaker(stripped)
+    stripped = _rstrip_punct(stripped)
+    if not stripped:
+        return None
 
-    strong = matches_any(utterance, STRONG_TRIGGERS)
+    strong = matches_any(stripped, STRONG_TRIGGERS) or matches_any(
+        utterance, STRONG_TRIGGERS
+    )
     prefix, remainder = _remainder_after_play_prefix(stripped)
     remainder = _rstrip_punct(remainder)
 
@@ -270,6 +320,7 @@ def match_play(text: str) -> MusicPlayHit | None:
         user_input=utterance,
         match_ms=match_ms,
         count=count,
+        speaker=speaker,
     )
 
 

@@ -196,6 +196,29 @@ class ShortcutModeTest(unittest.TestCase):
         self.assertEqual(ic["song"], "十年")
         self.assertEqual(ic["user_input"], "听一下十年")
 
+    def test_music_play_strips_xiaodu_speaker_and_keeps_song(self) -> None:
+        ic = self._music_ic("用小度音箱播放歌曲10")
+        self.assertEqual(ic["song"], "10")
+        self.assertEqual(ic["speaker"], "xiaodu")
+        self.assertEqual(ic["user_input"], "用小度音箱播放歌曲10")
+
+        ic = self._music_ic("用小度音箱播放歌曲十年")
+        self.assertEqual(ic["song"], "十年")
+        self.assertEqual(ic["speaker"], "xiaodu")
+
+        ic = self._music_ic("用小度播放音乐")
+        self.assertNotIn("song", ic)
+        self.assertEqual(ic["speaker"], "xiaodu")
+
+        ic = self._music_ic("小度播放十年")
+        self.assertEqual(ic["song"], "十年")
+        self.assertEqual(ic["speaker"], "xiaodu")
+
+    def test_music_play_without_xiaodu_prefix_has_no_speaker(self) -> None:
+        ic = self._music_ic("播放歌曲十年")
+        self.assertEqual(ic["song"], "十年")
+        self.assertNotIn("speaker", ic)
+
     def test_music_excludes_slideshow_and_unrelated(self) -> None:
         self.assertIsNone(intercept("播放幻灯片"))
         self.assertIsNone(intercept("播放视频"))

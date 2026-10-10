@@ -34,6 +34,11 @@ KNOWN_CAPABILITIES: dict[str, dict[str, Any]] = {
                 'required': False,
                 'description': '专辑',
             },
+            'speaker': {
+                'type': 'string',
+                'required': False,
+                'description': '输出音箱；xiaodu/小度=客厅小度，不要改派 xiaodu.speak',
+            },
         },
         'output_schema': {},
     },
