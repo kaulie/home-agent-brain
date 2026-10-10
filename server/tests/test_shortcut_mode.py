@@ -196,23 +196,29 @@ class ShortcutModeTest(unittest.TestCase):
         self.assertEqual(ic["song"], "十年")
         self.assertEqual(ic["user_input"], "听一下十年")
 
-    def test_music_play_strips_xiaodu_speaker_and_keeps_song(self) -> None:
-        ic = self._music_ic("用小度音箱播放歌曲10")
+    def test_xiaodu_play_song_uses_xiaodu_play_not_netease(self) -> None:
+        hit = intercept("用小度音箱播放歌曲10")
+        assert hit is not None
+        self.assertEqual(hit.plan[0]["capability"], "xiaodu.play")
+        ic = hit.plan[0]["input_constrict"]
         self.assertEqual(ic["song"], "10")
-        self.assertEqual(ic["speaker"], "xiaodu")
+        self.assertNotIn("speaker", ic)
         self.assertEqual(ic["user_input"], "用小度音箱播放歌曲10")
 
-        ic = self._music_ic("用小度音箱播放歌曲十年")
-        self.assertEqual(ic["song"], "十年")
-        self.assertEqual(ic["speaker"], "xiaodu")
+        hit = intercept("用小度音箱播放歌曲十年")
+        assert hit is not None
+        self.assertEqual(hit.plan[0]["capability"], "xiaodu.play")
+        self.assertEqual(hit.plan[0]["input_constrict"]["song"], "十年")
 
-        ic = self._music_ic("用小度播放音乐")
-        self.assertNotIn("song", ic)
-        self.assertEqual(ic["speaker"], "xiaodu")
+        hit = intercept("用小度播放音乐")
+        assert hit is not None
+        self.assertEqual(hit.plan[0]["capability"], "xiaodu.play")
+        self.assertNotIn("song", hit.plan[0]["input_constrict"])
 
-        ic = self._music_ic("小度播放十年")
-        self.assertEqual(ic["song"], "十年")
-        self.assertEqual(ic["speaker"], "xiaodu")
+        hit = intercept("小度播放十年")
+        assert hit is not None
+        self.assertEqual(hit.plan[0]["capability"], "xiaodu.play")
+        self.assertEqual(hit.plan[0]["input_constrict"]["song"], "十年")
 
     def test_music_play_without_xiaodu_prefix_has_no_speaker(self) -> None:
         ic = self._music_ic("播放歌曲十年")

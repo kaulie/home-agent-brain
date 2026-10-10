@@ -129,10 +129,28 @@ def intercept(text: str, *, intent: dict[str, Any] | None = None) -> InterceptRe
         constrict = {"user_input": music_hit.user_input}
         if music_hit.song:
             constrict["song"] = music_hit.song
+        # 点名小度：只把音频 URL 交给小度 DLNA，不开本机网易云。
+        if music_hit.speaker:
+            return InterceptResult(
+                kind="plan",
+                mode=None,
+                plan=[
+                    {
+                        "step": 1,
+                        "capability": "xiaodu.play",
+                        "input_constrict": constrict,
+                        "output_constrict": {"status_text": {}},
+                    }
+                ],
+                presentation={"type": "text", "from": "status_text"},
+                planner_meta={
+                    "goal": "xiaodu.play",
+                    "source": "shortcut",
+                    "timing": {"match": music_hit.match_ms},
+                },
+            )
         if music_hit.count is not None:
             constrict["count"] = music_hit.count
-        if music_hit.speaker:
-            constrict["speaker"] = music_hit.speaker
         return InterceptResult(
             kind="plan",
             mode=None,
