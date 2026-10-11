@@ -353,7 +353,7 @@ def _as_schedulable_row(cap: dict[str, Any], *, service_id: str, group: str) -> 
         do_not = []
     return {
         "capability_id": cid,
-        "kind": str(cap.get("kind") or "system").strip().lower() or "system",
+        "kind": "system",
         "composition": str(cap.get("composition") or "atomic").strip().lower() or "atomic",
         "role": cap.get("role") or "",
         "planner_recognize": cap.get("planner_recognize") or "",
@@ -828,7 +828,8 @@ def inventory_from_params(
     return msg, outputs
 
 
-# Ads must exist for attach(); keep a local check so catalog_rows fails fast.
-for _cid in SYSTEM_CAPABILITY_IDS:
-    if _cid not in ADS:
-        raise RuntimeError(f"missing planner ad for system capability {_cid}")
+# Ads come from marketplace. Don't fail import if the catalog is briefly unreachable;
+# catalog_rows() / attach() still run, and will stub until the next refresh.
+_missing_system_ads = [cid for cid in SYSTEM_CAPABILITY_IDS if cid not in ADS]
+if _missing_system_ads:
+    log.warning("marketplace missing system ads: %s", ",".join(_missing_system_ads))
