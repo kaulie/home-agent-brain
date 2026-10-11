@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -124,34 +123,6 @@ class ImageOcrCatalogTests(unittest.TestCase):
         self.assertNotIn("image_url", rows["image.ocr"]["input_schema"])
         self.assertIn("OCR", rows["image.ocr"]["typical_triggers"])
         self.assertIn("看图理解", rows["image.ocr"]["do_not_dispatch"])
-
-
-class OcrServiceNormalizeTests(unittest.TestCase):
-    def test_service_normalize_independent(self) -> None:
-        root = Path(__file__).resolve().parents[2] / "ocr-service"
-        sys.path.insert(0, str(root))
-        from engine import build_result, normalize_raw  # noqa: WPS433
-
-        blocks = normalize_raw({"rec_texts": ["票"], "rec_scores": [1], "rec_boxes": [[0, 0, 2, 2]]})
-        result = build_result(blocks, language="zh", return_bbox=True, return_confidence=True)
-        self.assertEqual(result["text"], "票")
-        self.assertEqual(result["engine"], "paddleocr")
-        cache_mod = __import__("cache")
-        tmp = tempfile.TemporaryDirectory()
-        try:
-            os.environ["OCR_CACHE_DIR"] = tmp.name
-            key = cache_mod.cache_key(
-                b"img",
-                language="zh",
-                return_bbox=True,
-                return_confidence=True,
-                model_version="PP-OCRv5",
-            )
-            cache_mod.store(key, result)
-            self.assertEqual(cache_mod.load(key)["text"], "票")
-        finally:
-            tmp.cleanup()
-            os.environ.pop("OCR_CACHE_DIR", None)
 
 
 if __name__ == "__main__":

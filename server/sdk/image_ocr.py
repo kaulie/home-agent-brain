@@ -104,7 +104,7 @@ def _post_ocr(
         raise ImageOcrError(f"OCR 服务失败 HTTP {e.code}：{detail}") from e
     except urllib.error.URLError as e:
         raise ImageOcrError(
-            f"OCR 服务连不上（{url}）：{e.reason}。请确认云上 ocr-service 已启动"
+            f"OCR 服务连不上（{url}）：{e.reason}。请确认 kaulie/ocr-service 已启动"
         ) from e
     except TimeoutError as e:
         raise ImageOcrError("OCR 服务超时") from e
