@@ -144,8 +144,10 @@ except ImportError:  # pragma: no cover
 
 try:
     from capability_ads import composition_of
+    from marketplace_catalog import overlay_declaration
 except ImportError:  # pragma: no cover
     from server.capability_ads import composition_of  # type: ignore
+    from server.marketplace_catalog import overlay_declaration  # type: ignore
 
 app = Flask(__name__)
 
@@ -2680,7 +2682,7 @@ def _list_schedulable_capabilities(*, capability_id=None, edge_id=None):
                 item["decomposes_to"] = decomposes
             if prefer:
                 item["prefer_when"] = prefer
-            rows.append(item)
+            rows.append(overlay_declaration(item))
     if not want_edge or want_edge == SYSTEM_EDGE_ID:
         for row in system_capability_catalog_rows():
             cid = str(row.get("capability_id") or "").strip()
