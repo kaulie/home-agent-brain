@@ -36,6 +36,7 @@ class DebugIssue:
     participant_id: str = ""
     status: str = "submitted"
     task_id: int | None = None
+    web_cursor_task_id: str = ""
     user_summary: str = ""
     problem_type: str = ""
     attachments: list[dict[str, str]] = field(default_factory=list)
@@ -51,6 +52,8 @@ class DebugIssue:
     def from_dict(cls, row: dict[str, Any]) -> DebugIssue:
         task_raw = row.get("task_id")
         task_id = int(task_raw) if task_raw is not None and str(task_raw).strip() != "" else None
+        web_raw = row.get("web_cursor_task_id")
+        web_cursor_task_id = str(web_raw).strip() if web_raw not in (None, "") else ""
         attachments = normalize_attachments(row.get("attachments"))
         if not attachments:
             attachments = normalize_attachments(row.get("attachment_asset_ids"))
@@ -62,6 +65,7 @@ class DebugIssue:
             participant_id=str(row.get("participant_id") or ""),
             status=str(row.get("status") or "submitted"),
             task_id=task_id,
+            web_cursor_task_id=web_cursor_task_id,
             user_summary=str(row.get("user_summary") or ""),
             problem_type=str(row.get("problem_type") or ""),
             attachments=attachments,

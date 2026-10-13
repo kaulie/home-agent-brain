@@ -1,4 +1,4 @@
-"""Agent Debug Gateway — User/Business Console → Issue → Dev Task → Dev Agent."""
+"""Agent Debug Gateway — Console feedback → Issue → web-cursor task."""
 
 from __future__ import annotations
 
@@ -10,7 +10,8 @@ from debug_attachments import attachment_asset_ids, normalize_attachments
 from debug_client_snapshot import merge_intent_context, normalize_client_snapshot
 from debug_feedback_types import normalize_problem_type, problem_type_label
 from debug_issue_store import DebugIssue, get_store
-from dev_task import get_agent_task, submit_agent_task
+from dev_task import get_agent_task
+from web_cursor_feedback import WebCursorError, create_feedback_task, task_api_url
 
 log = logging.getLogger("debug_gateway")
 
@@ -62,99 +63,104 @@ def build_intent_context(intent: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_agent_prompt(
+# web-cursor stores up to 4000 chars and shows the first 2000 in the agent brief.
+_DESCRIPTION_LIMIT = 4000
+_HEAD_LIMIT = 1800
+
+
+def _clip(text: str, limit: int) -> str:
+    raw = str(text or "").strip()
+    if len(raw) <= limit:
+        return raw
+    return raw[:limit] + "…"
+
+
+def feedback_task_title(issue: DebugIssue) -> str:
+    label = problem_type_label(issue.problem_type)
+    if int(issue.intent_id or 0) > 0:
+        title = f"用户反馈 intent #{issue.intent_id}"
+    else:
+        title = f"用户反馈 {issue.source or 'console'}"
+    if label:
+        title = f"{title} · {label}"
+    summary = issue.user_summary.strip()
+    if summary:
+        title = f"{title}：{_clip(summary, 40)}"
+    return _clip(title, 80)
+
+
+def _attachment_lines(issue: DebugIssue) -> list[str]:
+    if not issue.attachments:
+        return []
+    lines = ["", "## 附件（Brain asset）"]
+    for row in issue.attachments:
+        kind = row.get("kind") or "file"
+        aid = row.get("asset_id") or "—"
+        mime = row.get("mime_type") or ""
+        name = row.get("filename") or ""
+        detail = f"- {kind} {aid}"
+        if mime:
+            detail += f" mime={mime}"
+        if name:
+            detail += f" name={name}"
+        lines.append(detail)
+    return lines
+
+
+def build_feedback_description(
     issue: DebugIssue,
     context: dict[str, Any],
     *,
     client_snapshot: dict[str, Any] | None = None,
 ) -> str:
-    lines = [
-        "@controller [debug-issue]",
-        f"issue={issue.issue_id}",
-        f"intent={issue.intent_id}",
-        f"source={issue.source}",
+    """Task description for web-cursor. The fix request stays inside the first 2000 chars."""
+    label = problem_type_label(issue.problem_type)
+    head = [
+        "修复这条 HomeAgent 用户一键反馈。按 web-cursor 任务处理：用下面的现场定位根因，"
+        "在本任务注入的仓库里改代码并开 PR，按本任务的 goal 交付。",
+        "现场后半如果被截断，以本任务 description 全文为准。",
         "",
-        "[Dev Agent — Automated Debug Request]",
-        "This request was created by Agent Debug Gateway from a User/Business Console report.",
-        "Do NOT ask the reporter for more context; use the package below and Brain DB / logs / code.",
-        "",
-        f"issue_id={issue.issue_id}",
-        f"intent_id={issue.intent_id}",
-        f"session_id={issue.session_id or context.get('session_id') or '—'}",
-        f"participant_id={issue.participant_id}",
-        "",
-        "## User Input",
-        str(context.get("user_input") or "—"),
-        "",
-        "## Status / Error",
-        f"status={context.get('intent_status') or '—'}",
-        f"error={context.get('error') or '—'}",
-        "",
-        "## Execution Plan",
-        _json_preview(context.get("execution_plan") or []),
-        "",
-        "## Step Log",
-        _json_preview(context.get("step_log") or []),
-        "",
-        "## Status Timeline",
-        _json_preview(context.get("status_log") or []),
+        "## 现场",
+        f"- issue_id: {issue.issue_id}",
+        f"- intent_id: {issue.intent_id}",
+        f"- session_id: {issue.session_id or context.get('session_id') or '—'}",
+        f"- participant_id: {issue.participant_id}",
+        f"- source: {issue.source}",
+        f"- status: {context.get('intent_status') or '—'}",
+        f"- error: {_clip(str(context.get('error') or '—'), 400)}",
     ]
+    if label:
+        head.append(f"- feedback_type: {issue.problem_type}（{label}）")
+    brain = _brain_url_from_snapshot(client_snapshot)
+    if brain:
+        head.append(f"- brain: {brain}")
+    head.extend(["", "## 用户原话", _clip(str(context.get("user_input") or "—"), 500)])
     if issue.user_summary.strip():
-        lines.extend(["", "## User Summary", issue.user_summary.strip()])
-    problem_label = problem_type_label(issue.problem_type)
-    if problem_label:
-        lines.extend(["", "## Feedback Type", problem_label])
-    if issue.attachments:
-        lines.extend(["", "## User Attachments"])
-        for row in issue.attachments:
-            kind = row.get("kind") or "file"
-            aid = row.get("asset_id") or "—"
-            mime = row.get("mime_type") or ""
-            name = row.get("filename") or ""
-            detail = f"{kind} {aid}"
-            if mime:
-                detail += f" mime={mime}"
-            if name:
-                detail += f" name={name}"
-            lines.append(f"- {detail}")
+        head.extend(["", "## 用户补充", _clip(issue.user_summary, 500)])
+    head.extend(_attachment_lines(issue))
+    head_text = _clip("\n".join(head), _HEAD_LIMIT)
+
+    sections: list[str] = []
+    sections.append("## 执行计划\n" + _json_preview(context.get("execution_plan") or [], limit=900))
+    sections.append("## Step Log\n" + _json_preview(context.get("step_log") or [], limit=900))
+    sections.append("## 状态时间线\n" + _json_preview(context.get("status_log") or [], limit=600))
     if client_snapshot:
         snap = normalize_client_snapshot(client_snapshot)
-        primary = snap.get("primary_brain")
-        heartbeat = snap.get("heartbeat")
-        runtime_log = snap.get("runtime_intent_log")
-        if isinstance(primary, dict) and primary:
-            lines.extend(["", "## Primary Brain", _json_preview(primary)])
-        if isinstance(heartbeat, dict) and heartbeat:
-            lines.extend(["", "## Heartbeat", _json_preview(heartbeat)])
-        if isinstance(runtime_log, dict) and runtime_log:
-            lines.extend(["", "## Runtime Intent Log", _json_preview(runtime_log)])
-        elif snap:
-            lines.extend(["", "## Client Snapshot", _json_preview(snap)])
-    lines.extend(
-        [
-            "",
-            "## Full Context JSON",
-            _json_preview(context),
-            "",
-            "Respond in Chinese using exactly these two markdown sections (no extra top-level sections):",
-            "",
-            "## 根因分析",
-            "(cite evidence from logs/context; explain the root cause only)",
-            "",
-            "## 修复建议",
-            "List each fix as a separate item. Repeat this block for every item:",
-            "",
-            "### 建议 1：<short title>",
-            "- 优先级：P0|P1|P2",
-            "- 负责人：@brain|@runtime|@capability|@intent|@endpoint|@dba|@coordinator",
-            "- 作用：<what this fix does>",
-            "- 预期收益：<expected outcome after the fix>",
-            "- 改法：<concrete steps or code changes>",
-            "",
-            "Do not repeat root-cause analysis here. Use one ### block per fix item.",
-        ]
-    )
-    return "\n".join(lines)
+        if snap:
+            sections.append("## Client Snapshot\n" + _json_preview(snap, limit=900))
+    sections.append("## Context JSON\n" + _json_preview(context, limit=1500))
+
+    body = head_text
+    for section in sections:
+        piece = "\n\n" + section
+        if len(body) + len(piece) <= _DESCRIPTION_LIMIT:
+            body += piece
+            continue
+        remain = _DESCRIPTION_LIMIT - len(body) - 1
+        if remain > 80:
+            body += "\n" + piece[:remain].rstrip() + "…"
+        break
+    return body[:_DESCRIPTION_LIMIT]
 
 
 def _participant_matches_intent(intent: dict[str, Any], participant_id: str) -> bool:
@@ -172,6 +178,16 @@ def _participant_matches_intent(intent: dict[str, Any], participant_id: str) -> 
     return False
 
 
+def _web_cursor_fields(issue: DebugIssue) -> dict[str, str]:
+    task_id = str(issue.web_cursor_task_id or "").strip()
+    if not task_id:
+        return {}
+    return {
+        "web_cursor_task_id": task_id,
+        "web_cursor_task_url": task_api_url(task_id),
+    }
+
+
 def issue_to_user_view(issue: DebugIssue) -> dict[str, Any]:
     return {
         "issue_id": issue.issue_id,
@@ -179,6 +195,7 @@ def issue_to_user_view(issue: DebugIssue) -> dict[str, Any]:
         "status": issue.status,
         "message": _USER_MESSAGE,
         "task_id": issue.task_id,
+        **_web_cursor_fields(issue),
     }
 
 
@@ -200,6 +217,7 @@ def issue_to_admin_view(issue: DebugIssue, *, dev_task: dict[str, Any] | None = 
         "context": issue.context,
         "created_at": issue.created_at,
         "updated_at": issue.updated_at,
+        **_web_cursor_fields(issue),
     }
     if dev_task:
         view["dev_task"] = dev_task
@@ -225,7 +243,7 @@ def submit_debug_report(
     client_snapshot: dict[str, Any] | None = None,
     get_intent: GetIntentFn,
 ) -> dict[str, Any]:
-    """Create Issue + Dev Task from intent现场, or from pickup client_snapshot alone."""
+    """Create an Issue and a web-cursor task from intent现场, or from pickup client_snapshot alone."""
     pid = participant_id.strip()
     if not pid:
         return {"ok": False, "error": "participant_id is required"}
@@ -275,24 +293,29 @@ def submit_debug_report(
         context=context,
     )
 
-    prompt = build_agent_prompt(issue, context, client_snapshot=client_snapshot)
-    task_view = submit_agent_task(
-        prompt,
-        category="bug_fix",
-        attachments=list(issue.attachments or []),
-        brain_url=_brain_url_from_snapshot(client_snapshot) or None,
-    )
-    task_id = task_view.get("task_id") or task_view.get("intent_id")
+    description = build_feedback_description(issue, context, client_snapshot=client_snapshot)
+    title = feedback_task_title(issue)
     try:
-        task_id_int = int(task_id)
-    except (TypeError, ValueError):
-        task_id_int = None
-
-    if task_id_int:
-        store.update(issue.issue_id, task_id=task_id_int, status="analyzing")
+        created = create_feedback_task(title=title, description=description)
+    except WebCursorError as err:
+        store.update(issue.issue_id, status="failed", error=str(err))
         issue = store.get(issue.issue_id) or issue
-    else:
-        err = str(task_view.get("msg") or task_view.get("error") or "dev task not created")
+        log.warning(
+            "debug_report web-cursor create failed issue=%s intent=%s: %s",
+            issue.issue_id,
+            issue.intent_id,
+            err,
+        )
+        return {
+            "ok": False,
+            "error": str(err),
+            "issue_id": issue.issue_id,
+            "intent_id": issue.intent_id,
+        }
+
+    web_task_id = str(created.get("task_id") or "").strip()
+    if not web_task_id:
+        err = "web-cursor 未返回 taskId"
         store.update(issue.issue_id, status="failed", error=err)
         issue = store.get(issue.issue_id) or issue
         return {
@@ -301,12 +324,13 @@ def submit_debug_report(
             "issue_id": issue.issue_id,
             "intent_id": issue.intent_id,
         }
-
+    store.update(issue.issue_id, web_cursor_task_id=web_task_id, status="queued")
+    issue = store.get(issue.issue_id) or issue
     log.info(
-        "debug_report issue=%s intent=%s task=%s source=%s",
+        "debug_report issue=%s intent=%s web_cursor_task=%s source=%s",
         issue.issue_id,
         issue.intent_id,
-        task_id_int,
+        web_task_id,
         issue.source,
     )
     return {"ok": True, **issue_to_user_view(issue)}
