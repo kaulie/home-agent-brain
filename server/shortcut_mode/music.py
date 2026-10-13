@@ -1,4 +1,4 @@
-"""Listen / play-song / transport shortcut: strip prefixes; split 「歌手的歌名」 when safe."""
+"""Listen / play-song / transport shortcut: strip prefixes, do not split artist vs title."""
 
 from __future__ import annotations
 
@@ -76,74 +76,6 @@ _PLAYLIST_SUFFIXES = ("的歌曲", "的歌")
 _BARE_VERBS_ANY_REMAINDER = ("播放", "放")
 _BARE_VERBS_PLAYLIST_ONLY = ("听", "播")
 _TRAILING_PUNCT = "。．.！!？?，,、；;：:…~～"
-_ARTIST_TITLE_PARTICLE = "的"
-# Left side of 「X的Y」 that is almost never a spoken artist name
-# (avoids carving song titles like 「我的祖国」「爱的代价」「我们的爱」).
-_ARTIST_SPLIT_LEFT_BLOCK = frozenset(
-    {
-        "我",
-        "你",
-        "他",
-        "她",
-        "它",
-        "咱",
-        "俺",
-        "谁",
-        "这",
-        "那",
-        "啥",
-        "我们",
-        "你们",
-        "他们",
-        "她们",
-        "它们",
-        "咱们",
-        "自己",
-        "大家",
-        "别人",
-        "有人",
-        "没人",
-        "心",
-        "梦",
-        "爱",
-        "情",
-        "夜",
-        "雨",
-        "风",
-        "天",
-        "海",
-        "山",
-        "花",
-        "月",
-        "世界",
-        "人间",
-        "天上",
-        "地上",
-        "梦里",
-        "心里",
-        "夜空",
-        "雨中",
-        "风中",
-        "童话",
-        "故事",
-        "青春",
-        "寂寞",
-        "孤独",
-        "最后",
-        "最初",
-        "唯一",
-        "一个",
-        "另一个",
-        "所有",
-        "全部",
-        "那些",
-        "这些",
-        "某个",
-        "乐队",
-        "歌手",
-        "艺人",
-    }
-)
 
 # Longer first: 下载歌曲 before 下载. Empty remainder after 下载歌曲 must not intercept.
 _CACHE_SONG_PREFIXES = ("下载歌曲", "缓存歌曲")
@@ -204,7 +136,6 @@ class MusicPlayHit:
     match_ms: int
     count: int | None = None
     speaker: str | None = None
-    artist: str | None = None
 
 
 @dataclass(frozen=True)
@@ -283,26 +214,6 @@ def _playlist_remainder(remainder: str) -> bool:
         if text.endswith(suffix) and text[: -len(suffix)].strip():
             return True
     return False
-
-
-def _split_artist_title(remainder: str) -> tuple[str, str | None]:
-    """Split 「歌手的歌名」 → (song, artist); otherwise (remainder, None).
-
-    Playlist forms 「xxx的歌/歌曲」 stay opaque. Song titles that contain
-    「的」 (我的祖国 / 爱的代价) are kept whole via length + blocklist guards.
-    """
-    text = str(remainder or "").strip()
-    if not text or _playlist_remainder(text):
-        return text, None
-    if _ARTIST_TITLE_PARTICLE not in text:
-        return text, None
-    left, _, right = text.partition(_ARTIST_TITLE_PARTICLE)
-    left, right = left.strip(), right.strip()
-    if not left or not right:
-        return text, None
-    if left in _ARTIST_SPLIT_LEFT_BLOCK or len(left) < 2 or len(left) > 12:
-        return text, None
-    return right, left
 
 
 def _split_trailing_count(remainder: str) -> tuple[str, int | None]:
@@ -400,10 +311,8 @@ def match_play(text: str) -> MusicPlayHit | None:
         return None
 
     count: int | None = None
-    artist: str | None = None
     if song:
         song, count = strip_leading_quantity(song)
-        song, artist = _split_artist_title(song)
 
     match_ms = int(round((time.perf_counter() - t0) * 1000))
     return MusicPlayHit(
@@ -412,7 +321,6 @@ def match_play(text: str) -> MusicPlayHit | None:
         match_ms=match_ms,
         count=count,
         speaker=speaker,
-        artist=artist,
     )
 
 
