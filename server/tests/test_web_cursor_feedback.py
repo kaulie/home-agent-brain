@@ -56,8 +56,10 @@ class WebCursorFeedbackTests(unittest.TestCase):
         def fake_urlopen(req, timeout=0):
             body = req.data.decode("utf-8") if req.data else None
             payload = json.loads(body) if body else None
-            calls.append((req.full_url, payload))
-            if req.full_url.endswith("/api/projects"):
+            calls.append((req.full_url, payload, req.get_header("X-ui-version")))
+            if req.full_url.endswith("/health"):
+                raw = json.dumps({"ok": True, "version": "079ec179"}).encode()
+            elif req.full_url.endswith("/api/projects"):
                 raw = json.dumps(
                     [
                         {"projectId": "project-other", "name": "home-agent"},
@@ -65,6 +67,7 @@ class WebCursorFeedbackTests(unittest.TestCase):
                     ]
                 ).encode()
             else:
+                self.assertEqual(req.get_header("X-ui-version"), "079ec179")
                 raw = json.dumps(
                     {"taskId": "task-abc", "projectId": payload["projectId"]}
                 ).encode()
@@ -75,10 +78,12 @@ class WebCursorFeedbackTests(unittest.TestCase):
         self.assertEqual(created["task_id"], "task-abc")
         self.assertEqual(created["project_id"], "project-fb")
         self.assertEqual(created["task_url"], "http://127.0.0.1:4211/api/tasks/task-abc")
-        self.assertEqual(calls[1][1]["projectId"], "project-fb")
-        self.assertEqual(calls[1][1]["taskType"], "bugfix")
-        self.assertEqual(calls[1][1]["goal"], "merge")
-        self.assertEqual(calls[1][1]["description"], "修一下")
+        post = next(item for item in calls if item[0].endswith("/api/tasks"))
+        self.assertEqual(post[1]["projectId"], "project-fb")
+        self.assertEqual(post[1]["taskType"], "bugfix")
+        self.assertEqual(post[1]["goal"], "merge")
+        self.assertEqual(post[1]["description"], "修一下")
+        self.assertEqual(post[2], "079ec179")
 
         calls.clear()
         with patch("web_cursor_feedback.urllib.request.urlopen", side_effect=fake_urlopen):
@@ -94,20 +99,31 @@ class WebCursorFeedbackTests(unittest.TestCase):
 
         def fake_urlopen(req, timeout=0):
             calls.append(req.full_url)
+            if req.full_url.endswith("/health"):
+                return _Resp(json.dumps({"version": "079ec179"}).encode())
             payload = json.loads(req.data.decode("utf-8"))
             self.assertEqual(payload["projectId"], "project-explicit")
             self.assertEqual(payload["goal"], "deploy")
+            self.assertEqual(req.get_header("X-ui-version"), "079ec179")
             return _Resp(json.dumps({"taskId": "task-explicit"}).encode())
 
         with patch("web_cursor_feedback.urllib.request.urlopen", side_effect=fake_urlopen):
             created = wc.create_feedback_task(title="t", description="d")
         self.assertEqual(created["task_id"], "task-explicit")
-        self.assertEqual(calls, ["http://127.0.0.1:4211/api/tasks"])
+        self.assertEqual(
+            calls,
+            [
+                "http://127.0.0.1:4211/health",
+                "http://127.0.0.1:4211/api/tasks",
+            ],
+        )
 
     def test_http_error_surfaces_message(self) -> None:
         os.environ["WEB_CURSOR_FEEDBACK_PROJECT_ID"] = "project-missing"
 
         def fake_urlopen(req, timeout=0):
+            if req.full_url.endswith("/health"):
+                return _Resp(json.dumps({"version": "079ec179"}).encode())
             raise urllib.error.HTTPError(
                 req.full_url,
                 400,
@@ -120,6 +136,38 @@ class WebCursorFeedbackTests(unittest.TestCase):
             with self.assertRaises(wc.WebCursorError) as caught:
                 wc.create_feedback_task(title="t", description="d")
         self.assertIn("project-missing not found", str(caught.exception))
+
+    def test_ui_version_mismatch_retries_with_server_version(self) -> None:
+        os.environ["WEB_CURSOR_FEEDBACK_PROJECT_ID"] = "project-fb"
+        seen: list[str | None] = []
+
+        def fake_urlopen(req, timeout=0):
+            if req.full_url.endswith("/health"):
+                return _Resp(json.dumps({"version": "stale"}).encode())
+            header = req.get_header("X-ui-version")
+            seen.append(header)
+            if header != "079ec179":
+                raise urllib.error.HTTPError(
+                    req.full_url,
+                    428,
+                    "precondition required",
+                    hdrs=None,
+                    fp=io.BytesIO(
+                        json.dumps(
+                            {
+                                "code": "ui-version-mismatch",
+                                "serverVersion": "079ec179",
+                                "error": "missing x-ui-version header",
+                            }
+                        ).encode()
+                    ),
+                )
+            return _Resp(json.dumps({"taskId": "task-retried"}).encode())
+
+        with patch("web_cursor_feedback.urllib.request.urlopen", side_effect=fake_urlopen):
+            created = wc.create_feedback_task(title="t", description="d")
+        self.assertEqual(created["task_id"], "task-retried")
+        self.assertEqual(seen, ["stale", "079ec179"])
 
     def test_missing_project_name(self) -> None:
         def fake_urlopen(req, timeout=0):

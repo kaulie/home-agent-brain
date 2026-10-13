@@ -23,8 +23,11 @@ _DEFAULT_TASK_TYPE = "bugfix"
 _GOALS = frozenset({"merge", "deploy"})
 _TASK_TYPES = frozenset({"feature", "bugfix", "diagnose", "general"})
 _TIMEOUT_SEC = 20
+_UI_VERSION_HEADER = "x-ui-version"
+_WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 _project_id_cache: str | None = None
+_ui_version_cache: str | None = None
 
 
 class WebCursorError(Exception):
@@ -32,8 +35,9 @@ class WebCursorError(Exception):
 
 
 def reset_project_cache() -> None:
-    global _project_id_cache
+    global _project_id_cache, _ui_version_cache
     _project_id_cache = None
+    _ui_version_cache = None
 
 
 def base_url() -> str:
@@ -117,23 +121,62 @@ def resolve_feedback_project_id() -> str:
     return project_id
 
 
-def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
-    url = base_url() + path
-    data = None
-    headers = {"Accept": "application/json"}
-    if payload is not None:
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+def _ui_version() -> str:
+    """Version web-cursor requires on writes (`x-ui-version`), from `GET /health`."""
+    global _ui_version_cache
+    if _ui_version_cache:
+        return _ui_version_cache
+    data = _request("GET", "/health", attach_ui_version=False)
+    version = str(data.get("version") or "").strip() if isinstance(data, dict) else ""
+    if not version:
+        raise WebCursorError("web-cursor /health 没有 version")
+    _ui_version_cache = version
+    return version
+
+
+def _request(
+    method: str,
+    path: str,
+    payload: dict[str, Any] | None = None,
+    *,
+    attach_ui_version: bool = True,
+) -> Any:
+    write = method.upper() in _WRITE_METHODS
+    version = _ui_version() if write and attach_ui_version else ""
     try:
-        with urllib.request.urlopen(req, timeout=_TIMEOUT_SEC) as resp:
-            raw = resp.read()
+        return _open(method, path, payload, version)
     except urllib.error.HTTPError as err:
-        raise WebCursorError(_http_error_message(err)) from err
+        body, parsed = _read_http_error(err)
+        refreshed = _mismatch_server_version(parsed) if write and attach_ui_version else ""
+        if refreshed and refreshed != version:
+            global _ui_version_cache
+            _ui_version_cache = refreshed
+            try:
+                return _open(method, path, payload, refreshed)
+            except urllib.error.HTTPError as retry_err:
+                retry_body, retry_parsed = _read_http_error(retry_err)
+                raise WebCursorError(
+                    _format_http_error(retry_err.code, retry_body, retry_parsed)
+                ) from retry_err
+        raise WebCursorError(_format_http_error(err.code, body, parsed)) from err
     except TimeoutError as err:
         raise WebCursorError(f"web-cursor 超时（{base_url()}）") from err
     except urllib.error.URLError as err:
         raise WebCursorError(f"web-cursor 连不上（{base_url()}）：{err.reason}") from err
+
+
+def _open(method: str, path: str, payload: dict[str, Any] | None, ui_version: str) -> Any:
+    url = base_url() + path
+    data = None
+    headers = {"Accept": "application/json"}
+    if ui_version:
+        headers[_UI_VERSION_HEADER] = ui_version
+    if payload is not None:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=_TIMEOUT_SEC) as resp:
+        raw = resp.read()
     if not raw:
         return {}
     try:
@@ -142,21 +185,31 @@ def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> A
         raise WebCursorError("web-cursor 返回的不是 JSON") from err
 
 
-def _http_error_message(err: urllib.error.HTTPError) -> str:
+def _read_http_error(err: urllib.error.HTTPError) -> tuple[str, dict[str, Any] | None]:
     body = ""
     try:
         body = err.read().decode("utf-8", errors="replace")
     except Exception:
         body = ""
-    message = body.strip()
     try:
         parsed = json.loads(body) if body else None
     except json.JSONDecodeError:
         parsed = None
+    return body, parsed if isinstance(parsed, dict) else None
+
+
+def _mismatch_server_version(parsed: dict[str, Any] | None) -> str:
+    if not isinstance(parsed, dict) or parsed.get("code") != "ui-version-mismatch":
+        return ""
+    return str(parsed.get("serverVersion") or "").strip()
+
+
+def _format_http_error(code: int, body: str, parsed: dict[str, Any] | None) -> str:
+    message = body.strip()
     if isinstance(parsed, dict) and parsed.get("error"):
         message = str(parsed["error"])
     if len(message) > 300:
         message = message[:300] + "…"
     if not message:
-        message = err.reason or "request failed"
-    return f"web-cursor HTTP {err.code}: {message}"
+        message = "request failed"
+    return f"web-cursor HTTP {code}: {message}"
