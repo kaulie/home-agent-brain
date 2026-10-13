@@ -3547,7 +3547,8 @@ class HomeBrainPersistTest(unittest.TestCase):
         self.assertEqual(plan[0]["capability"], "music.play")
         self.assertEqual(plan[0]["assigned_edge_id"], "mac-music")
         ic = plan[0]["input_constrict"]
-        self.assertEqual(ic.get("song"), "陈奕迅的十年")
+        self.assertEqual(ic.get("song"), "十年")
+        self.assertEqual(ic.get("artist"), "陈奕迅")
         self.assertEqual(ic.get("user_input"), "播放陈奕迅的十年")
         self.assertEqual(ic.get("participant_id"), "android-music")
         self.assertEqual(ic.get("intent_id"), str(body["intent_id"]))

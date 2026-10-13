@@ -105,11 +105,31 @@ class ShortcutModeTest(unittest.TestCase):
         self.assertIn("match", timing)
         return hit.plan[0]["input_constrict"]
 
-    def test_music_play_keeps_full_remainder_as_song(self) -> None:
+    def test_music_play_splits_artist_and_title(self) -> None:
         ic = self._music_ic("播放陈奕迅的十年")
-        self.assertEqual(ic["song"], "陈奕迅的十年")
+        self.assertEqual(ic["song"], "十年")
+        self.assertEqual(ic["artist"], "陈奕迅")
         self.assertEqual(ic["user_input"], "播放陈奕迅的十年")
-        self.assertNotIn("artist", ic)
+
+        ic = self._music_ic("放林俊杰的江南")
+        self.assertEqual(ic["song"], "江南")
+        self.assertEqual(ic["artist"], "林俊杰")
+
+        ic = self._music_ic("播放新裤子的没有理想的人不伤心")
+        self.assertEqual(ic["song"], "没有理想的人不伤心")
+        self.assertEqual(ic["artist"], "新裤子")
+
+    def test_music_play_keeps_song_titles_containing_de(self) -> None:
+        for text, song in (
+            ("播放我的祖国", "我的祖国"),
+            ("播放爱的代价", "爱的代价"),
+            ("播放我们的爱", "我们的爱"),
+            ("播放你的样子", "你的样子"),
+        ):
+            with self.subTest(text=text):
+                ic = self._music_ic(text)
+                self.assertEqual(ic["song"], song)
+                self.assertNotIn("artist", ic)
 
     def test_music_play_xxx_de_ge_keeps_song_not_artist(self) -> None:
         ic = self._music_ic("播放张三的歌")
