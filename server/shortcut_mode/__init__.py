@@ -129,8 +129,6 @@ def intercept(text: str, *, intent: dict[str, Any] | None = None) -> InterceptRe
         constrict = {"user_input": music_hit.user_input}
         if music_hit.song:
             constrict["song"] = music_hit.song
-        if music_hit.artist:
-            constrict["artist"] = music_hit.artist
         # 点名小度：只把音频 URL 交给小度 DLNA，不开本机网易云。
         if music_hit.speaker:
             return InterceptResult(
