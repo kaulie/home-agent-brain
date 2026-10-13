@@ -7495,7 +7495,7 @@ def admin_list_dev_tasks():
 
 @app.route("/api/v1/debug/report", methods=["POST"])
 def post_debug_report():
-    """User/Business Console: one-tap bug report with auto-collected execution context."""
+    """User/Business Console: one-tap bug report, handed to a web-cursor task."""
     data = request.get_json(silent=True) or {}
     if not isinstance(data, dict):
         return jsonify(ok=False, error="JSON object required"), 400

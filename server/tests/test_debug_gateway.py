@@ -34,6 +34,14 @@ else:
     hb = None  # type: ignore
 
 
+def _created_task(task_id: str = "task-feedback-1") -> dict:
+    return {
+        "task_id": task_id,
+        "project_id": "project-cc557f77f1ac40a4",
+        "task_url": f"http://127.0.0.1:4211/api/tasks/{task_id}",
+    }
+
+
 @unittest.skipUnless(flask is not None, "flask not installed in this interpreter")
 class DebugGatewayTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -63,12 +71,14 @@ class DebugGatewayTests(unittest.TestCase):
         )
         return int(intent_id)
 
-    def test_post_debug_report_creates_issue_and_dev_task(self) -> None:
+    def test_post_debug_report_creates_issue_and_web_cursor_task(self) -> None:
         assert hb is not None
         intent_id = self._seed_intent()
         client = hb.app.test_client()
-        with patch("dev_task.bridge.submit_command") as submit:
-            submit.return_value = {"run_id": "run-debug-1", "status": "queued"}
+        with patch(
+            "debug_gateway.create_feedback_task",
+            return_value=_created_task(),
+        ) as created, patch("dev_task.bridge.submit_command") as bridge_submit:
             resp = client.post(
                 "/api/v1/debug/report",
                 json={
@@ -82,6 +92,14 @@ class DebugGatewayTests(unittest.TestCase):
         self.assertTrue(body.get("ok"))
         self.assertEqual(body.get("message"), "已提交反馈，正在分析。")
         self.assertEqual(body.get("intent_id"), intent_id)
+        self.assertEqual(body.get("web_cursor_task_id"), "task-feedback-1")
+        self.assertEqual(body.get("status"), "queued")
+        created.assert_called_once()
+        kwargs = created.call_args.kwargs
+        self.assertIn("用GoPro拍张照片", kwargs["description"])
+        self.assertIn("按 web-cursor 任务处理", kwargs["description"][:2000])
+        self.assertLessEqual(len(kwargs["description"]), 4000)
+        bridge_submit.assert_not_called()
         issue_id = int(body["issue_id"])
         detail = client.get(f"/api/v1/admin/debug/issue/{issue_id}")
         self.assertEqual(detail.status_code, 200)
@@ -89,6 +107,8 @@ class DebugGatewayTests(unittest.TestCase):
         issue = payload.get("issue") if isinstance(payload.get("issue"), dict) else payload
         snap = (issue.get("context") or {}).get("client_snapshot") or {}
         self.assertEqual(snap.get("journey"), "test logistics")
+        self.assertEqual(issue.get("web_cursor_task_id"), "task-feedback-1")
+        self.assertEqual(issue.get("status"), "queued")
 
     def test_post_debug_report_rejects_wrong_participant(self) -> None:
         assert hb is not None
@@ -105,8 +125,7 @@ class DebugGatewayTests(unittest.TestCase):
     def test_post_debug_report_pickup_without_intent(self) -> None:
         assert hb is not None
         client = hb.app.test_client()
-        with patch("dev_task.bridge.submit_command") as submit:
-            submit.return_value = {"run_id": "run-pickup-1", "status": "queued"}
+        with patch("debug_gateway.create_feedback_task", return_value=_created_task()):
             resp = client.post(
                 "/api/v1/debug/report",
                 json={
@@ -154,8 +173,7 @@ class DebugGatewayTests(unittest.TestCase):
         assert hb is not None
         intent_id = self._seed_intent()
         client = hb.app.test_client()
-        with patch("dev_task.bridge.submit_command") as submit:
-            submit.return_value = {"run_id": "run-debug-other", "status": "queued"}
+        with patch("debug_gateway.create_feedback_task", return_value=_created_task()):
             resp = client.post(
                 "/api/v1/debug/report",
                 json={
@@ -181,8 +199,7 @@ class DebugGatewayTests(unittest.TestCase):
         assert hb is not None
         intent_id = self._seed_intent()
         client = hb.app.test_client()
-        with patch("dev_task.bridge.submit_command") as submit:
-            submit.return_value = {"run_id": "run-debug-attach", "status": "queued"}
+        with patch("debug_gateway.create_feedback_task", return_value=_created_task()):
             resp = client.post(
                 "/api/v1/debug/report",
                 json={
@@ -213,8 +230,7 @@ class DebugGatewayTests(unittest.TestCase):
         assert hb is not None
         intent_id = self._seed_intent()
         client = hb.app.test_client()
-        with patch("dev_task.bridge.submit_command") as submit:
-            submit.return_value = {"run_id": "run-debug-2", "status": "queued"}
+        with patch("debug_gateway.create_feedback_task", return_value=_created_task()):
             client.post(
                 "/api/v1/debug/report",
                 json={"intent_id": intent_id, "participant_id": "living-room-android"},
@@ -226,9 +242,35 @@ class DebugGatewayTests(unittest.TestCase):
         issues = body.get("issues") or []
         self.assertEqual(len(issues), 1)
         self.assertEqual(issues[0]["intent_id"], intent_id)
-        self.assertIn("dev_task", issues[0])
+        self.assertEqual(issues[0].get("web_cursor_task_id"), "task-feedback-1")
+        self.assertIn("/api/tasks/task-feedback-1", issues[0].get("web_cursor_task_url") or "")
+        self.assertNotIn("dev_task", issues[0])
 
-    def test_build_agent_prompt_requires_structured_sections(self) -> None:
+    def test_post_debug_report_marks_failed_when_web_cursor_errors(self) -> None:
+        assert hb is not None
+        import web_cursor_feedback
+
+        intent_id = self._seed_intent()
+        client = hb.app.test_client()
+        with patch(
+            "debug_gateway.create_feedback_task",
+            side_effect=web_cursor_feedback.WebCursorError("web-cursor 连不上"),
+        ):
+            resp = client.post(
+                "/api/v1/debug/report",
+                json={"intent_id": intent_id, "participant_id": "living-room-android"},
+            )
+        self.assertEqual(resp.status_code, 400)
+        body = resp.get_json()
+        self.assertFalse(body.get("ok"))
+        self.assertIn("web-cursor", body.get("error") or "")
+        issue_id = int(body["issue_id"])
+        detail = client.get(f"/api/v1/admin/debug/issue/{issue_id}")
+        issue = detail.get_json().get("issue") or detail.get_json()
+        self.assertEqual(issue.get("status"), "failed")
+        self.assertNotIn("web_cursor_task_id", issue)
+
+    def test_build_feedback_description_asks_for_a_fix(self) -> None:
         assert debug_gateway is not None
         issue = debug_issue_store.DebugIssue(
             issue_id=1,
@@ -236,26 +278,31 @@ class DebugGatewayTests(unittest.TestCase):
             session_id="sess-1",
             source="user_console",
             participant_id="living-room-android",
-            status="analyzing",
+            status="queued",
             user_summary="执行失败",
             problem_type="execution_error",
-            attachments=[],
-            task_id=7,
+            attachments=[{"asset_id": "asset_abc", "kind": "image"}],
+            task_id=None,
             error="",
-            context={"user_input": "开灯", "intent_status": "failed", "error": "timeout"},
-            created_at="2026-08-27T12:00:00Z",
-            updated_at="2026-08-27T12:00:00Z",
+            context={
+                "user_input": "开灯",
+                "intent_status": "failed",
+                "error": "timeout",
+                "execution_plan": ["x" * 3000],
+                "step_log": ["y" * 3000],
+            },
+            created_at=1.0,
+            updated_at=1.0,
         )
-        prompt = debug_gateway.build_agent_prompt(issue, issue.context)
-        self.assertIn("## 根因分析", prompt)
-        self.assertIn("## 修复建议", prompt)
-        self.assertIn("- 优先级：", prompt)
-        self.assertIn("- 负责人：", prompt)
-        self.assertIn("- 预期收益：", prompt)
-        self.assertNotIn(
-            "Analyze root cause, cite evidence, and give a concise fix recommendation.",
-            prompt,
-        )
+        text = debug_gateway.build_feedback_description(issue, issue.context)
+        self.assertLessEqual(len(text), 4000)
+        self.assertIn("按 web-cursor 任务处理", text[:2000])
+        self.assertIn("开灯", text[:2000])
+        self.assertIn("asset_abc", text[:2000])
+        self.assertNotIn("## 修复建议", text)
+        title = debug_gateway.feedback_task_title(issue)
+        self.assertIn("intent #42", title)
+        self.assertIn("执行报错", title)
 
 
 if __name__ == "__main__":
