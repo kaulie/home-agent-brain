@@ -27,5 +27,8 @@
 2. **OCR 不在本仓源码树。** `image.ocr` 调 [kaulie/ocr-service](https://github.com/kaulie/ocr-service) `:9188`。
 3. **[`kaulie/home-agent-os`](https://github.com/kaulie/home-agent-os) 已归档只读。** 不要往 os 回写 Brain。
 4. **本检出无 `.github/workflows`。** 合入前至少本地跑单测，不要假设有 Actions。
+5. **核心不再要求只改一个文件。** 原 `server/home_brain.py` 文件头的
+   “Iterate on this file only” 已失效；内部值处理与策略拆入五个同级模块，
+   入口仍拥有全部原有路由与启动流程，落点见 [architecture.md](architecture.md)。
 
 后续 agent 若发现上述条目被新代码推翻，删除或改写，不要累积过期异议。
