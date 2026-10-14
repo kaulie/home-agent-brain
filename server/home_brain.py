@@ -337,6 +337,51 @@ else:
     )
 
 
+# Compatibility exports for callers of the historical entry-point helpers.
+if __package__:
+    from .model_response import (
+        _ARK_SECRET_KEYS,
+        _ARK_HTTP_MSG_MAX,
+        _without_secrets,
+        _ark_result,
+        _ark_http_error_json,
+        get_model_answer,
+        _qwen_reply_text,
+        _ark_http_error_msg,
+    )
+    from .execution_step_values import (
+        _TERMINAL_STEP_STATUSES,
+        _CAPTURE_STEP_CAPABILITIES,
+        _step_status_int,
+        _capture_succeeded_before,
+        _upload_failure_msg,
+        _plan_steps_all_terminal,
+        _system_predecessors_succeeded,
+        _resolve_system_params,
+    )
+else:
+    from model_response import (
+        _ARK_SECRET_KEYS,
+        _ARK_HTTP_MSG_MAX,
+        _without_secrets,
+        _ark_result,
+        _ark_http_error_json,
+        get_model_answer,
+        _qwen_reply_text,
+        _ark_http_error_msg,
+    )
+    from execution_step_values import (
+        _TERMINAL_STEP_STATUSES,
+        _CAPTURE_STEP_CAPABILITIES,
+        _step_status_int,
+        _capture_succeeded_before,
+        _upload_failure_msg,
+        _plan_steps_all_terminal,
+        _system_predecessors_succeeded,
+        _resolve_system_params,
+    )
+
+
 def _fold_capture_upload_composite(plan):
     return _plan_normalization._fold_capture_upload_composite(
         plan, online_capability_providers=online_capability_providers
@@ -2087,51 +2132,6 @@ def _list_schedulable_capabilities(*, capability_id=None, edge_id=None):
     rows.sort(key=lambda row: (row["capability_id"], row["edge_id"]))
     return rows
 
-_ARK_SECRET_KEYS = frozenset({"authorization", "api_key", "ark_api_key", "bearer"})
-
-
-def _without_secrets(value):
-    if isinstance(value, dict):
-        return {
-            k: _without_secrets(v)
-            for k, v in value.items()
-            if str(k).lower() not in _ARK_SECRET_KEYS
-        }
-    if isinstance(value, list):
-        return [_without_secrets(v) for v in value]
-    return value
-
-
-def _ark_result(*, ans="", cost_ms=0, request_payload=None, response_json=None, cache_hit=False):
-    payload = _without_secrets(request_payload) if request_payload is not None else None
-    return {
-        "ans": ans,
-        "cost_ms": int(cost_ms or 0),
-        "request_payload": payload,
-        "response_json": response_json,
-        "cache_hit": bool(cache_hit),
-    }
-
-
-def _ark_http_error_json(exc):
-    body = ""
-    try:
-        body = exc.read().decode("utf-8", errors="replace")
-    except Exception:
-        body = ""
-    parsed = None
-    if body:
-        try:
-            parsed = json.loads(body)
-        except Exception:
-            parsed = None
-    status = int(getattr(exc, "code", 0) or 0)
-    if isinstance(parsed, dict):
-        out = dict(parsed)
-        out.setdefault("http_status", status)
-        return out
-    return {"http_status": status, "body": body[:8000]}
-
 
 def _planner_prompt_pair(user_text, intent_id, intent_base_time, intent=None):
     """Same system + user strings Doubao and Qwen shadow both send."""
@@ -2312,45 +2312,10 @@ def call_ark(user_text, session_id, user_id, intent_id, intent_base_time, intent
     )
 
 
-def get_model_answer(res_json):
-    try:
-        output_list = res_json.get("output", [])
-        for block in output_list:
-            if block.get("type") == "message":
-                content_arr = block.get("content", [])
-                if len(content_arr) > 0 and "text" in content_arr[0]:
-                    return content_arr[0]["text"]
-        return "暂时无法获取回答"
-    except Exception:
-        return "数据解析失败"
-
-
 def qwen_planner_enabled():
     """Local Brain shadow: set QWEN_PLANNER=1. URL defaults to cloud :8090/chat."""
     raw = (os.environ.get("QWEN_PLANNER") or "").strip().lower()
     return raw in ("1", "true", "yes", "on")
-
-
-def _qwen_reply_text(response_json):
-    """Parse model_server POST /chat JSON ({ok, text|answer|reply})."""
-    if isinstance(response_json, str):
-        return response_json
-    if not isinstance(response_json, dict):
-        return str(response_json or "")
-    for key in ("reply", "answer", "text", "content", "output"):
-        val = response_json.get(key)
-        if isinstance(val, str) and val.strip():
-            return val
-        if isinstance(val, dict):
-            nested = val.get("content") or val.get("text")
-            if isinstance(nested, str) and nested.strip():
-                return nested
-    msg = response_json.get("message")
-    if isinstance(msg, dict):
-        nested = msg.get("content") or msg.get("text")
-        if isinstance(nested, str) and nested.strip():
-            return nested
-    return ""
 
 
 def call_qwen(user_text, intent=None):
@@ -2791,7 +2756,6 @@ _STATUS_ALIASES = {
     "plan_failed": "failed",
 }
 _TERMINAL_STATUSES = frozenset({"succeeded", "failed"})
-_TERMINAL_STEP_STATUSES = frozenset({2, 3})
 _EMPTY_PLAN_MSG = "execution_plan 为空，无法调度"
 
 
@@ -2805,49 +2769,6 @@ def _empty_plan_failure_msg(notes=None, llm_out=None):
     if reason:
         return reason
     return _EMPTY_PLAN_MSG
-
-
-_ARK_HTTP_MSG_MAX = 240
-
-
-def _ark_http_error_msg(response_json):
-    """User-facing failure when the ARK planner call itself returned HTTP >= 400.
-
-    ``call_ark`` already parses provider HTTP errors into ``response_json``
-    (``http_status`` + ``error.code/message`` via ``_ark_http_error_json``).
-    Returns None when there is no HTTP error, so a genuinely empty LLM plan still
-    falls through to ``_empty_plan_failure_msg`` with its original diagnostics.
-    """
-    if not isinstance(response_json, dict):
-        return None
-    try:
-        status = int(response_json.get("http_status") or 0)
-    except (TypeError, ValueError):
-        status = 0
-    if status < 400:
-        return None
-    if status == 401:
-        return "规划服务 401，检查 ARK_API_KEY"
-    code = ""
-    message = ""
-    err = response_json.get("error")
-    if isinstance(err, dict):
-        code = str(err.get("code") or "").strip()
-        message = str(err.get("message") or "").strip()
-    if not message:
-        raw_body = response_json.get("body")
-        if isinstance(raw_body, str) and raw_body.strip():
-            message = raw_body.strip()
-    code_part = f"（{code}）" if code else ""
-    if code == "AccountOverdueError":
-        text = f"规划服务 HTTP {status}{code_part}：火山方舟 ARK 账号欠费，请充值后重试"
-    else:
-        text = f"规划服务 HTTP {status}{code_part}：请稍后重试"
-        if message:
-            text += f"；{message}"
-    if len(text) > _ARK_HTTP_MSG_MAX:
-        text = text[:_ARK_HTTP_MSG_MAX - 3] + "..."
-    return text
 
 
 # Runtime reports ncm-cli login state on a login-required music failure. Brain —
@@ -4323,69 +4244,6 @@ _PENDING_STEP_ABANDONED_MSG = "未执行：前序步骤失败"
 
 # Capture produces a local capture_ref; upload (asset.upload) turns it into an Asset.
 _UPLOAD_STEP_CAPABILITIES = frozenset({"asset.upload"})
-_CAPTURE_STEP_CAPABILITIES = frozenset(
-    {
-        "camera.capture",
-        "camera.take_video",
-        "take_video",
-        "document.scan",
-        "visual.input",
-        "camera.capture_and_upload",
-    }
-)
-
-
-def _step_status_int(step) -> int:
-    try:
-        return int((step or {}).get("status") or 0)
-    except (TypeError, ValueError):
-        return 0
-
-
-def _capture_succeeded_before(plan, failed_step) -> bool:
-    """True if a capture/scan step succeeded (status=2) before the failed step."""
-    try:
-        fail_n = int((failed_step or {}).get("step") or 0)
-    except (TypeError, ValueError):
-        return False
-    for step in plan or []:
-        if not isinstance(step, dict):
-            continue
-        try:
-            n = int(step.get("step") or 0)
-        except (TypeError, ValueError):
-            continue
-        if n >= fail_n:
-            continue
-        cap = str(step.get("capability") or "").strip()
-        if cap in _CAPTURE_STEP_CAPABILITIES and _step_status_int(step) == 2:
-            return True
-    return False
-
-
-def _upload_failure_msg(plan, failed_step, msg):
-    """Upload failed after a successful capture: say so honestly.
-
-    The capture already landed in the device inbox, so the user should hear
-    "拍照成功，已存本机" plus the real upload failure — never "拍照失败".
-    """
-    text = str(msg or "").strip()
-    if not _capture_succeeded_before(plan, failed_step):
-        return text
-    if text.startswith("拍照成功"):
-        return text
-    if "上传" in text or "upload" in text.lower():
-        return f"拍照成功，照片已保存在本机；但{text}"
-    return f"拍照成功，照片已保存在本机；但上传失败：{text}"
-
-
-def _plan_steps_all_terminal(plan) -> bool:
-    if not plan:
-        return False
-    for step in plan:
-        if _step_status_int(step) not in _TERMINAL_STEP_STATUSES:
-            return False
-    return True
 
 
 def _abandon_pending_plan_steps(intent, *, reason: str) -> None:
@@ -4467,43 +4325,6 @@ def _maybe_finalize_intent_after_step(intent_id_int, intent) -> None:
     _maybe_attach_speak_delivery(intent)
     _save_intent(intent)
     log.info("intent %s → succeeded (all steps complete)", intent_id_int)
-
-
-def _system_predecessors_succeeded(plan, step_n) -> bool:
-    for step in plan or []:
-        if not isinstance(step, dict):
-            continue
-        try:
-            n = int(step.get("step") or 0)
-        except (TypeError, ValueError):
-            continue
-        if n <= 0 or n >= int(step_n):
-            continue
-        try:
-            st = int(step.get("status") or 0)
-        except (TypeError, ValueError):
-            return False
-        if st != 2:
-            return False
-    return True
-
-
-def _resolve_system_params(raw, intent):
-    params = dict(raw) if isinstance(raw, dict) else {}
-    ctx = intent.get("ctx_param") or intent.get("context") or {}
-    if not isinstance(ctx, dict):
-        ctx = {}
-    out = {}
-    for key, val in params.items():
-        if isinstance(val, str) and val.startswith("$") and len(val) > 1:
-            name = val[1:]
-            if name in ctx and ctx[name] is not None:
-                out[key] = ctx[name]
-            else:
-                out[key] = val
-        else:
-            out[key] = val
-    return out
 
 
 def _apply_step_status_record(

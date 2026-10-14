@@ -32,12 +32,17 @@ iPhone / Android / Mac Edge / 其它 Intent Source
 | `presentation_policy.py` | 用户展示偏好、语音输入输出对称策略、计划能力与人数文本 |
 | `asset_values.py` | AssetRef、文件名/MIME、资源对外视图和时间过滤边界 |
 | `provider_selection.py` | 实例名称匹配、分组、歧义提示和 appliance 参数 |
+| `model_response.py` | ARK / Qwen 响应值解析、请求记录脱敏、HTTP 错误解析和用户提示；网络调用仍在入口 |
+| `execution_step_values.py` | 步骤状态判定、拍照成功后的上传失败措辞、系统步骤前序检查与上下文参数引用解析 |
 
 入口显式重新导出原有 helper 名称，现有调用方仍可从 `home_brain` 导入。
 执行计划三个入口保留薄适配函数，将当前 `online_capability_providers` 回调传给
 规范化模块；设备查询按调用发生，不在模块导入时缓存。资源存储、授权和展示
 组装等依赖实时状态的逻辑仍由入口协调。两种导入布局（`server.*` 与 server
 目录下直接导入）均受支持。
+
+步骤状态的持久化、失败后放弃后续步骤、系统能力实际执行仍由入口协调；
+`execution_step_values.py` 只读取传入的计划和上下文，不查询运行状态。
 
 ## 规划与广告
 

@@ -36,6 +36,11 @@ cd server && python3 -m unittest discover -s tests -t .
 JSON 解析、展示策略、资源视图和实例匹配。涉及运行状态的集成行为仍由
 `tests/test_home_brain.py` 等原有测试覆盖；拆分时应与同环境 main 基线比较。
 
+模型响应与执行步骤值契约：
+`cd server && python3 -m unittest tests.test_response_step_values -v`。
+覆盖请求递归脱敏、模型响应形状、HTTP 错误、终态与前序成功的区别、
+拍照/上传失败措辞和上下文 token 解析；双导入布局仍由 `test_core_modules` 覆盖。
+
 ## 提交与敏感物
 
 不要提交 `server/.env`、`ARK_API_KEY`、`BRAIN_ADMIN_TOKEN`、sqlite 库、`uploads/`。

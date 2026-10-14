@@ -28,7 +28,10 @@
 3. **[`kaulie/home-agent-os`](https://github.com/kaulie/home-agent-os) 已归档只读。** 不要往 os 回写 Brain。
 4. **本检出无 `.github/workflows`。** 合入前至少本地跑单测，不要假设有 Actions。
 5. **核心不再要求只改一个文件。** 原 `server/home_brain.py` 文件头的
-   “Iterate on this file only” 已失效；内部值处理与策略拆入五个同级模块，
+   “Iterate on this file only” 已失效；内部值处理与策略拆入七个同级模块，
    入口仍拥有全部原有路由与启动流程，落点见 [architecture.md](architecture.md)。
+6. **继续拆分（2026-10-14）。** 模型响应/错误处理与执行步骤值处理已迁入
+   `model_response.py`、`execution_step_values.py`；入口保留原 helper 导出，
+   不改变 Flask 进程、路由、网络请求和持久化的归属。
 
 后续 agent 若发现上述条目被新代码推翻，删除或改写，不要累积过期异议。
