@@ -1,6 +1,7 @@
 """Home Agent Brain control plane.
 
-Source: volcengine/home_brain.py. Iterate on this file only.
+HTTP routes, shared runtime state and startup live here. Internal value and
+policy helpers live in focused sibling modules; see docs/project_map/architecture.md.
 """
 from __future__ import annotations
 
@@ -149,6 +150,211 @@ except ImportError:  # pragma: no cover
     from server.capability_ads import composition_of  # type: ignore
     from server.marketplace_catalog import overlay_declaration  # type: ignore
 
+# Compatibility exports: callers may continue importing helpers from home_brain.
+if __package__:
+    from . import plan_normalization as _plan_normalization
+    from .planner_output import (
+        _CAPABILITY_ID_ALIASES,
+        _PRESENTATION_SCHEMA,
+        _PLANNER_PRESENTATION_SCHEMA,
+        _PLANNER_OUTPUT_SCHEMA,
+        extract_llm_output,
+        extract_llm_output_relaxed,
+        _as_capability_notes,
+        extract_llm_capability_notes,
+        extract_llm_presentation,
+        _normalize_presentation_plan,
+        _normalize_capability_id,
+        _normalize_capability_notes,
+        _score_capability_row_for_text,
+        _catalog_matches_utterance,
+        _planner_empty_plan_unreliable,
+    )
+    from .presentation_policy import (
+        _DISPLAY_CAPS,
+        _SPOKEN_PRESENTATION_FIELDS,
+        _user_asked_speaker,
+        _user_asked_tv,
+        _user_asked_photo,
+        _intent_source_voice,
+        _user_asked_photo_count,
+        _user_asked_see_photo,
+        _user_asked_see_document,
+        _plan_wants_image_presentation,
+        _plan_wants_document_presentation,
+        _voice_symmetric_presentation_kind,
+        _speak_delivery_text,
+        _caps_in_plan,
+        _people_count_text,
+    )
+    from .asset_values import (
+        _as_asset_ref,
+        _asset_media_family,
+        _is_previewable_document_ref,
+        _parse_asset_refs_list,
+        _ASSET_UPLOAD_TYPES,
+        _ASSET_NAME_ERROR,
+        _ASSET_STEM_RE,
+        _ASSET_EXT_RE,
+        AssetFilenameError,
+        _clean_upload_filename,
+        _validate_asset_filename,
+        _safe_on_disk_name,
+        _infer_asset_type,
+        _guess_mime,
+        _asset_representation_storage,
+        _ASSET_META_KEYS,
+        _STORAGE_URL_KEYS,
+        _asset_metadata_only,
+        _asset_stream_href,
+        _url_asset_target,
+        _asset_runtime_storage,
+        _asset_endpoint_view,
+        _asset_runtime_view,
+        _asset_public_view,
+        _parse_asset_day_window,
+        _parse_asset_time_bound,
+    )
+    from .provider_selection import (
+        _provider_display_name,
+        _instance_key,
+        _group_providers_by_instance,
+        _ambiguous_capability_edge_msg,
+        _is_mac_runtime_row,
+        _user_text_matches_instance,
+        _APPLIANCE_TOKEN_NOISE,
+        _instance_match_tokens,
+        _service_id_matches_text,
+        _matched_instance_groups,
+        _step_appliance_name,
+        _ensure_appliance_param,
+    )
+    from .plan_normalization import (
+        _DELIVERY_CAPS,
+        _TV_GATED_CAPS,
+        _SPEAKER_PLAY_CAP,
+        _PLAY_CONTROL_CAPS,
+        _user_asked_generated_image,
+        _query_keeps_image_goal,
+        _repair_stripped_query_inputs,
+        _LEGACY_ASSET_ALIAS,
+        _rewrite_asset_token,
+        _normalize_plan_asset_refs,
+        _COMPOSITE_CAPTURE_UPLOAD,
+        _step_uses_capture_ref_token,
+    )
+else:
+    import plan_normalization as _plan_normalization
+    from planner_output import (
+        _CAPABILITY_ID_ALIASES,
+        _PRESENTATION_SCHEMA,
+        _PLANNER_PRESENTATION_SCHEMA,
+        _PLANNER_OUTPUT_SCHEMA,
+        extract_llm_output,
+        extract_llm_output_relaxed,
+        _as_capability_notes,
+        extract_llm_capability_notes,
+        extract_llm_presentation,
+        _normalize_presentation_plan,
+        _normalize_capability_id,
+        _normalize_capability_notes,
+        _score_capability_row_for_text,
+        _catalog_matches_utterance,
+        _planner_empty_plan_unreliable,
+    )
+    from presentation_policy import (
+        _DISPLAY_CAPS,
+        _SPOKEN_PRESENTATION_FIELDS,
+        _user_asked_speaker,
+        _user_asked_tv,
+        _user_asked_photo,
+        _intent_source_voice,
+        _user_asked_photo_count,
+        _user_asked_see_photo,
+        _user_asked_see_document,
+        _plan_wants_image_presentation,
+        _plan_wants_document_presentation,
+        _voice_symmetric_presentation_kind,
+        _speak_delivery_text,
+        _caps_in_plan,
+        _people_count_text,
+    )
+    from asset_values import (
+        _as_asset_ref,
+        _asset_media_family,
+        _is_previewable_document_ref,
+        _parse_asset_refs_list,
+        _ASSET_UPLOAD_TYPES,
+        _ASSET_NAME_ERROR,
+        _ASSET_STEM_RE,
+        _ASSET_EXT_RE,
+        AssetFilenameError,
+        _clean_upload_filename,
+        _validate_asset_filename,
+        _safe_on_disk_name,
+        _infer_asset_type,
+        _guess_mime,
+        _asset_representation_storage,
+        _ASSET_META_KEYS,
+        _STORAGE_URL_KEYS,
+        _asset_metadata_only,
+        _asset_stream_href,
+        _url_asset_target,
+        _asset_runtime_storage,
+        _asset_endpoint_view,
+        _asset_runtime_view,
+        _asset_public_view,
+        _parse_asset_day_window,
+        _parse_asset_time_bound,
+    )
+    from provider_selection import (
+        _provider_display_name,
+        _instance_key,
+        _group_providers_by_instance,
+        _ambiguous_capability_edge_msg,
+        _is_mac_runtime_row,
+        _user_text_matches_instance,
+        _APPLIANCE_TOKEN_NOISE,
+        _instance_match_tokens,
+        _service_id_matches_text,
+        _matched_instance_groups,
+        _step_appliance_name,
+        _ensure_appliance_param,
+    )
+    from plan_normalization import (
+        _DELIVERY_CAPS,
+        _TV_GATED_CAPS,
+        _SPEAKER_PLAY_CAP,
+        _PLAY_CONTROL_CAPS,
+        _user_asked_generated_image,
+        _query_keeps_image_goal,
+        _repair_stripped_query_inputs,
+        _LEGACY_ASSET_ALIAS,
+        _rewrite_asset_token,
+        _normalize_plan_asset_refs,
+        _COMPOSITE_CAPTURE_UPLOAD,
+        _step_uses_capture_ref_token,
+    )
+
+
+def _fold_capture_upload_composite(plan):
+    return _plan_normalization._fold_capture_upload_composite(
+        plan, online_capability_providers=online_capability_providers
+    )
+
+
+def _prepare_shortcut_execution_plan(plan, intent=None):
+    return _plan_normalization._prepare_shortcut_execution_plan(
+        plan, intent, online_capability_providers=online_capability_providers
+    )
+
+
+def sanitize_execution_plan(plan, intent=None):
+    return _plan_normalization.sanitize_execution_plan(
+        plan, intent, online_capability_providers=online_capability_providers
+    )
+
+
 app = Flask(__name__)
 
 # ====================== 配置区 Mock 内存缓存（本地测试不用Redis） ======================
@@ -163,14 +369,6 @@ task_queue = queue.Queue(maxsize=50)
 qwen_task_queue = queue.Queue(maxsize=50)
 # 单线程串行执行大模型，全局锁保证同一时间仅1次 Ark 调用（Qwen 不用这把锁）
 llm_running_lock = threading.Lock()
-
-# Legacy / model-invented ids → canonical capability_id for gap reports.
-_CAPABILITY_ID_ALIASES = {
-    "ac.set": "climate.set",
-    "hvac.set": "climate.set",
-    "air_conditioner.set": "climate.set",
-}
-
 
 # provider: []
 # eg. neteasemusic: [a, b, c]
@@ -323,153 +521,8 @@ def set_cache(q, ans, source="", *, catalog_fingerprint: str = ""):
     }
 
 
-_DELIVERY_CAPS = {"endpoint.present", "endpoint.feedback", "notify.speak"}
-_DISPLAY_CAPS = {"display.photo", "display.slideshow"}
-# 用户没点名电视时，这些「往电视上放东西」的步骤要剥掉（display.audio 不进
-# _DISPLAY_CAPS：那会牵动 image presentation 推导，见 _plan_wants_image_presentation）。
-_TV_GATED_CAPS = _DISPLAY_CAPS | {"display.audio"}
-# 用户没点名小度/音箱时，xiaodu.play 也要剥掉（否则会把音频放到客厅音箱上）
-_SPEAKER_PLAY_CAP = "xiaodu.play"
-# 播放控制（暂停/继续/停止）同样是「点名设备才排」的步骤
-_PLAY_CONTROL_CAPS = frozenset({"xiaodu.control", "display.audio.control"})
-_SPOKEN_PRESENTATION_FIELDS = frozenset(
-    {
-        "time_text",
-        "answer_text",
-        "reply",
-        "summary",
-        "people",
-        "state",
-        "text",
-        "status_text",
-    }
-)
 WAKE_PLANNER = "voice.stream.wake"
 WAKE_ECHO_CAPABILITY = "voicewakeup.echo"
-_PRESENTATION_SCHEMA = {
-    "type": "text | image | audio — audio means the user should hear the result spoken; the control plane turns that into an execution step on the issuing runtime",
-    "from": "summary | answer_text | time_text | asset_ref | state — which execution field fills the payload",
-    "channel": "iphone | kindle | android | speaker",
-    "endpoint": "optional; only when the user/intent explicitly names a destination. Omit to use Input Source Affinity (default Response Target = Input Source). Never copy an Execution Target.",
-    "text": "optional",
-    "asset_ref": "optional AssetRef {asset_id, type, mime_type?} when from=asset_ref; never a URL or filesystem path",
-    "audio_url": "optional",
-}
-
-# Planner-facing presentation fields (must match OUTPUT_SCHEMA; no extra keys).
-_PLANNER_PRESENTATION_SCHEMA = {
-    "type": "text | image | audio | document",
-    "from": "optional execution field some plan step emits: time_text | answer_text | summary | state | status_text | asset_ref | …",
-    "endpoint": "optional; only when the user explicitly names a destination; omit for Input Source Affinity",
-}
-
-_PLANNER_OUTPUT_SCHEMA = {
-    "type": "object",
-    "required": [
-        "goal",
-        "required_capabilities",
-        "reason",
-        "plan",
-        "presentation",
-        "missing_capabilities",
-        "better_capabilities",
-    ],
-    "additionalProperties": False,
-    "properties": {
-        "goal": {"type": "string"},
-        "required_capabilities": {
-            "type": "array",
-            "items": {"type": "string", "description": "capability_id copied from Available Capabilities"},
-        },
-        "reason": {"type": "string"},
-        "plan": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "required": ["step", "capability", "input_constrict", "output_constrict", "execution_timing"],
-                "additionalProperties": False,
-                "properties": {
-                    "step": {"type": "integer"},
-                    "capability": {
-                        "type": "string",
-                        "description": "exact capability_id from a matching Available Capabilities row",
-                    },
-                    "input_constrict": {
-                        "type": "object",
-                        "description": "keys from that row's input_schema; $key references allowed",
-                    },
-                    "output_constrict": {
-                        "type": "object",
-                        "description": "keys this step exposes for later $key or presentation.from; value is {type, data_dest}",
-                        "additionalProperties": {
-                            "type": "object",
-                            "properties": {
-                                "type": {"type": "string"},
-                                "data_dest": {"type": "string", "enum": ["context"]},
-                            },
-                        },
-                    },
-                    "execution_timing": {
-                        "type": "object",
-                        "required": ["mode"],
-                        "properties": {
-                            "mode": {"type": "string", "enum": ["immediate", "delay", "interval", "cron"]},
-                            "exec_time": {
-                                "type": "integer",
-                                "description": "Unix milliseconds for delay; from intent_base_time, not model time",
-                            },
-                            "first_exec_time": {
-                                "type": "integer",
-                                "description": "Unix milliseconds for interval/cron; from intent_base_time",
-                            },
-                            "interval_sec": {"type": "integer"},
-                            "end_time": {"type": "integer"},
-                            "count": {"type": "integer"},
-                            "cron_expr": {"type": "string"},
-                            "timezone": {"type": "string"},
-                        },
-                    },
-                    "assigned_edge_id": {
-                        "type": "string",
-                        "description": "edge_id from the matching Available Capabilities row",
-                    },
-                },
-            },
-        },
-        "presentation": {
-            "type": "object",
-            "required": ["type"],
-            "additionalProperties": False,
-            "properties": {
-                "type": {"type": "string", "enum": ["text", "image", "audio", "document"]},
-                "from": {"type": "string"},
-                "endpoint": {"type": "string"},
-            },
-        },
-        "missing_capabilities": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "required": ["capability", "reason"],
-                "properties": {
-                    "capability": {"type": "string"},
-                    "reason": {"type": "string"},
-                },
-            },
-        },
-        "better_capabilities": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "required": ["capability", "reason"],
-                "properties": {
-                    "capability": {"type": "string"},
-                    "reason": {"type": "string"},
-                },
-            },
-        },
-    },
-}
 
 
 def _wake_ack_text() -> str:
@@ -484,110 +537,6 @@ def _is_wake_ack_utterance(text):
 
     compact = re.sub(r"[\s，。！？,.!?\"'“”‘’]", "", str(text or ""))
     return compact in wake_ack_utterances()
-
-
-def _user_asked_speaker(text):
-    """用户点名了小度/音箱（xiaodu.play 是「点名才排」的步骤）。"""
-    raw = str(text or "")
-    return any(k in raw for k in ("小度", "音箱", "小爱", "喇叭"))
-
-
-def _user_asked_tv(text):
-    raw = str(text or "")
-    keys = ("电视", "投屏", "投到", "chromecast", "Chromecast", "slideshow", "轮播")
-    return any(k in raw for k in keys)
-
-
-def _user_asked_photo(text):
-    raw = str(text or "")
-    keys = ("拍张", "拍照", "拍一张", "take_photo", "照相")
-    return any(k in raw for k in keys)
-
-
-def _intent_source_voice(intent) -> bool:
-    return str((intent or {}).get("source") or "").strip().lower() == "voice"
-
-
-def _user_asked_photo_count(text) -> bool:
-    raw = str(text or "")
-    if "照片" not in raw and "张" not in raw:
-        return False
-    return any(k in raw for k in ("多少", "几张", "几幅", "数量", "一共"))
-
-
-def _user_asked_see_photo(text) -> bool:
-    raw = str(text or "")
-    if _user_asked_photo_count(raw):
-        return False
-    view_keys = ("看一下", "看下", "给我看", "看看", "显示", "瞧")
-    photo_keys = ("照片", "图片", "那张", "这张")
-    return any(v in raw for v in view_keys) and any(p in raw for p in photo_keys)
-
-
-def _user_asked_see_document(text) -> bool:
-    """User asked to preview a PDF/document (not a photo count question)."""
-    raw = str(text or "")
-    if _user_asked_photo_count(raw):
-        return False
-    # Pure photo view stays image; do not steal 「看一下那张照片」.
-    if _user_asked_see_photo(raw):
-        return False
-    view_keys = ("看一下", "看下", "给我看", "看看", "显示", "瞧", "预览", "打开")
-    doc_keys = ("pdf", "PDF", "文档", "文件", "document")
-    return any(v in raw for v in view_keys) and any(d in raw for d in doc_keys)
-
-
-def _plan_wants_image_presentation(intent) -> bool:
-    caps = _caps_in_plan(intent)
-    if any(c in _DISPLAY_CAPS for c in caps):
-        return True
-    raw = intent.get("presentation")
-    if isinstance(raw, dict) and str(raw.get("type") or "").strip().lower() == "image":
-        return True
-    text = str((intent or {}).get("text") or "")
-    if _user_asked_tv(text):
-        return True
-    if _user_asked_see_photo(text):
-        return True
-    return False
-
-
-def _plan_wants_document_presentation(intent) -> bool:
-    raw = intent.get("presentation")
-    if isinstance(raw, dict) and str(raw.get("type") or "").strip().lower() == "document":
-        return True
-    text = str((intent or {}).get("text") or "")
-    return _user_asked_see_document(text)
-
-
-def _voice_symmetric_presentation_kind(intent, kind: str, from_key: str) -> tuple[str, str]:
-    """Voice in → spoken out: word-field delivery defaults to audio, not text."""
-    pkind = str(kind or "").strip().lower()
-    if pkind != "text":
-        return pkind, from_key
-    if not _intent_source_voice(intent):
-        return pkind, from_key
-    if _plan_wants_image_presentation(intent):
-        return pkind, from_key
-    fk = str(from_key or "").strip()
-    if not fk or fk in _SPOKEN_PRESENTATION_FIELDS:
-        return "audio", from_key
-    return pkind, from_key
-
-
-def _speak_delivery_text(intent):
-    pres = intent.get("presentation") if isinstance(intent.get("presentation"), dict) else {}
-    text = str(pres.get("text") or "").strip()
-    if text:
-        return text
-    ctx = intent.get("ctx_param") or intent.get("context") or {}
-    if not isinstance(ctx, dict):
-        return ""
-    for key in ("time_text", "answer_text", "summary", "state"):
-        val = str(ctx.get(key) or "").strip()
-        if val:
-            return val
-    return ""
 
 
 def _edges_snapshot():
@@ -636,27 +585,6 @@ def _planner_wants_speak(intent):
 def _maybe_attach_speak_delivery(intent):
     """Spoken delivery is a notify.speak plan step. Runtime executes it; no hook."""
     return
-
-
-def _people_count_text(people):
-    raw = people
-    if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except (TypeError, ValueError):
-            return ""
-    if not isinstance(raw, list) or not raw:
-        return ""
-    total = 0
-    for item in raw:
-        if isinstance(item, dict):
-            try:
-                total += int(item.get("count") or 1)
-            except (TypeError, ValueError):
-                total += 1
-        else:
-            total += 1
-    return f"{total}个人"
 
 
 def _endpoint_supported_types(rec):
@@ -1522,374 +1450,6 @@ def _world_state_nodes():
     return nodes
 
 
-def _user_asked_generated_image(text):
-    raw = str(text or "")
-    keys = (
-        "图片",
-        "来张",
-        "画一张",
-        "画张",
-        "出图",
-        "配图",
-        "生成图",
-        "生图",
-        "一张图",
-        "photo",
-        "picture",
-        "image",
-    )
-    if any(k in raw for k in keys):
-        return True
-    lower = raw.lower()
-    return "generate" in lower and "image" in lower
-
-
-def _query_keeps_image_goal(query, intent_text):
-    q = str(query or "")
-    if _user_asked_generated_image(q) or _user_asked_tv(q):
-        return True
-    # Same full sentence (or longer paraphrase) already carries the goal.
-    return bool(intent_text) and intent_text in q
-
-
-def _repair_stripped_query_inputs(plan, intent=None):
-    """If planner stripped query to a topic noun, restore full intent text.
-
-    Downstream only sees this step's inputs; bare topics cause refuse-without-image.
-    Also set want_image=true when this step expects asset_ref and the user asked
-    for a picture / TV cast (Edge force-draws even if the text model refuses).
-    """
-    text = str((intent or {}).get("text") or "").strip()
-    if not text:
-        return plan
-    wants_pic = _user_asked_generated_image(text) or _user_asked_tv(text)
-    if not wants_pic:
-        return plan
-    repaired = []
-    for step in plan or []:
-        if not isinstance(step, dict):
-            repaired.append(step)
-            continue
-        s = dict(step)
-        ic = s.get("input_constrict")
-        oc = s.get("output_constrict")
-        if not isinstance(ic, dict) or "query" not in ic:
-            repaired.append(s)
-            continue
-        expects_image = isinstance(oc, dict) and (
-            "asset_ref" in oc or "image_ref" in oc or "capture_ref" in oc
-        )
-        if not expects_image:
-            repaired.append(s)
-            continue
-        new_ic = dict(ic)
-        q = str(new_ic.get("query") or "").strip()
-        if not q or not _query_keeps_image_goal(q, text):
-            new_ic["query"] = text
-        if str(new_ic.get("want_image") or "").strip().lower() not in (
-            "1",
-            "true",
-            "yes",
-            "on",
-        ):
-            new_ic["want_image"] = "true"
-        s["input_constrict"] = new_ic
-        repaired.append(s)
-    return repaired
-
-
-_LEGACY_ASSET_ALIAS = {
-    "image_ref": "asset_ref",
-    "photo_url": "asset_ref",
-}
-
-
-def _rewrite_asset_token(value):
-    """Map legacy $image_ref tokens to $asset_ref. $capture_ref is a local inbox handle, not an Asset."""
-    if not isinstance(value, str):
-        return value
-    raw = value.strip()
-    if not raw.startswith("$"):
-        return value
-    key = raw[1:].strip()
-    mapped = _LEGACY_ASSET_ALIAS.get(key)
-    if mapped:
-        return "$" + mapped
-    return value
-
-
-def _normalize_plan_asset_refs(plan):
-    """Force step I/O identity: image_ref/photo_url → asset_ref. Keep capture_ref."""
-    out = []
-    for step in plan or []:
-        if not isinstance(step, dict):
-            out.append(step)
-            continue
-        s = dict(step)
-        ic = s.get("input_constrict")
-        if isinstance(ic, dict):
-            new_ic = {}
-            for k, v in ic.items():
-                nk = _LEGACY_ASSET_ALIAS.get(str(k), str(k))
-                new_ic[nk] = _rewrite_asset_token(v)
-            s["input_constrict"] = new_ic
-        oc = s.get("output_constrict")
-        if isinstance(oc, dict):
-            new_oc = {}
-            for k, v in oc.items():
-                nk = _LEGACY_ASSET_ALIAS.get(str(k), str(k))
-                if isinstance(v, dict):
-                    new_oc[nk] = dict(v)
-                else:
-                    new_oc[nk] = v
-            s["output_constrict"] = new_oc
-        out.append(s)
-    return out
-
-
-def sanitize_execution_plan(plan, intent=None):
-    """Strip delivery-as-capability and TV display unless the user asked for TV."""
-    text = str((intent or {}).get("text") or "")
-    asked_tv = _user_asked_tv(text)
-    asked_photo = _user_asked_photo(text)
-    cleaned = []
-    for step in plan or []:
-        if not isinstance(step, dict):
-            continue
-        cap = str(step.get("capability") or "").strip()
-        if not cap:
-            continue
-        if cap in _DELIVERY_CAPS:
-            continue
-        if cap in _TV_GATED_CAPS and not asked_tv:
-            continue
-        if cap == _SPEAKER_PLAY_CAP and not _user_asked_speaker(text):
-            continue
-        if cap in _PLAY_CONTROL_CAPS and not (
-            _user_asked_speaker(text) or _user_asked_tv(text)
-        ):
-            continue
-        cleaned.append(dict(step))
-    has_capture = any(
-        str(s.get("capability") or "") in ("camera.capture", "camera.capture_and_upload")
-        for s in cleaned
-    )
-    if asked_photo and not asked_tv:
-        drop = {"notify.speak", "query.content"}
-        if not has_capture:
-            drop.add("vision.ask")
-        cleaned = [s for s in cleaned if str(s.get("capability") or "") not in drop]
-    cleaned = _normalize_plan_asset_refs(cleaned)
-    cleaned = _repair_stripped_query_inputs(cleaned, intent)
-    cleaned = _fold_capture_upload_composite(cleaned)
-    for idx, step in enumerate(cleaned, start=1):
-        step["step"] = idx
-    return cleaned
-
-
-def _prepare_shortcut_execution_plan(plan, intent=None):
-    """Shortcut plans are pre-built; do not strip notify.speak like LLM sanitize."""
-    steps = []
-    for step in plan or []:
-        if not isinstance(step, dict):
-            continue
-        cap = str(step.get("capability") or "").strip()
-        if not cap:
-            continue
-        steps.append(dict(step))
-    steps = _normalize_plan_asset_refs(steps)
-    steps = _repair_stripped_query_inputs(steps, intent)
-    steps = _fold_capture_upload_composite(steps)
-    for idx, step in enumerate(steps, start=1):
-        step["step"] = idx
-    return steps
-
-
-_COMPOSITE_CAPTURE_UPLOAD = "camera.capture_and_upload"
-
-
-def _step_uses_capture_ref_token(step) -> bool:
-    ic = (step or {}).get("input_constrict")
-    if not isinstance(ic, dict):
-        return False
-    return str(ic.get("capture_ref") or "").strip() == "$capture_ref"
-
-
-def _fold_capture_upload_composite(plan):
-    """Merge consecutive capture + upload($capture_ref) into one composite step.
-
-    capture_ref is Runtime-local and cannot cross edges. Brain schedules the
-    composite as a whole; Runtime expands it.
-    """
-    rows = [dict(s) for s in (plan or []) if isinstance(s, dict)]
-    if not rows:
-        return rows
-    out = []
-    i = 0
-    while i < len(rows):
-        cur = rows[i]
-        nxt = rows[i + 1] if i + 1 < len(rows) else None
-        cap = str(cur.get("capability") or "").strip()
-        nxt_cap = str((nxt or {}).get("capability") or "").strip()
-        if (
-            cap == "camera.capture"
-            and nxt_cap == "asset.upload"
-            and _step_uses_capture_ref_token(nxt)
-        ):
-            providers = {
-                str(row.get("edge_id") or "").strip()
-                for row in online_capability_providers(_COMPOSITE_CAPTURE_UPLOAD)
-            }
-            providers.discard("")
-            if not providers:
-                out.append(cur)
-                i += 1
-                continue
-            dest = {}
-            ic = nxt.get("input_constrict")
-            if isinstance(ic, dict):
-                dest_val = ic.get("dest") or ic.get("upload_dest")
-                if dest_val not in (None, "", "$capture_ref"):
-                    dest["dest"] = dest_val
-            oc = nxt.get("output_constrict")
-            if not isinstance(oc, dict) or not oc:
-                oc = {"asset_ref": {"type": "string", "data_dest": "context"}}
-            merged = {
-                "step": cur.get("step"),
-                "capability": _COMPOSITE_CAPTURE_UPLOAD,
-                "input_constrict": dest,
-                "output_constrict": oc,
-            }
-            timing = cur.get("execution_timing") or (nxt or {}).get("execution_timing")
-            if timing:
-                merged["execution_timing"] = timing
-            edge = str(cur.get("assigned_edge_id") or "").strip()
-            nxt_edge = str((nxt or {}).get("assigned_edge_id") or "").strip()
-            if edge and edge in providers:
-                merged["assigned_edge_id"] = edge
-            elif nxt_edge and nxt_edge in providers:
-                merged["assigned_edge_id"] = nxt_edge
-            elif len(providers) == 1:
-                merged["assigned_edge_id"] = next(iter(providers))
-            out.append(merged)
-            i += 2
-            continue
-        out.append(cur)
-        i += 1
-    return out
-
-
-def extract_llm_output(llm_answer):
-    if not llm_answer:
-        return {}
-    try:
-        output = json.loads(llm_answer) if isinstance(llm_answer, str) else llm_answer
-    except (TypeError, ValueError):
-        return {}
-    return output if isinstance(output, dict) else {}
-
-
-def extract_llm_output_relaxed(llm_answer):
-    """Qwen shadow only: strip fences / leading junk. Doubao path stays strict."""
-    got = extract_llm_output(llm_answer)
-    if got:
-        return got
-    text = str(llm_answer or "").strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text, count=1, flags=re.IGNORECASE)
-        text = re.sub(r"\s*```\s*$", "", text)
-    start = text.find("{")
-    end = text.rfind("}")
-    if start < 0 or end <= start:
-        return {}
-    try:
-        output = json.loads(text[start : end + 1])
-    except (TypeError, ValueError):
-        return {}
-    return output if isinstance(output, dict) else {}
-
-
-def _as_capability_notes(raw):
-    if raw is None:
-        return []
-    if not isinstance(raw, list):
-        raw = [raw]
-    notes = []
-    for item in raw:
-        if isinstance(item, str):
-            cap = item.strip()
-            if cap:
-                notes.append({"capability": cap, "reason": ""})
-            continue
-        if not isinstance(item, dict):
-            continue
-        cap = str(
-            item.get("capability")
-            or item.get("capability_id")
-            or item.get("name")
-            or ""
-        ).strip()
-        reason = str(item.get("reason") or item.get("why") or "").strip()
-        if cap or reason:
-            notes.append({"capability": cap, "reason": reason})
-    return notes
-
-
-def extract_llm_capability_notes(llm_answer, catalog=None):
-    output = extract_llm_output(llm_answer)
-    return {
-        "missing_capabilities": _normalize_capability_notes(
-            output.get("missing_capabilities"), catalog
-        ),
-        "better_capabilities": _normalize_capability_notes(
-            output.get("better_capabilities"), catalog
-        ),
-    }
-
-
-def extract_llm_presentation(llm_answer):
-    """Planner-owned Presentation decision. Not a capability step."""
-    if not llm_answer:
-        return {}
-    try:
-        output = json.loads(llm_answer) if isinstance(llm_answer, str) else llm_answer
-    except (TypeError, ValueError):
-        return {}
-    if not isinstance(output, dict):
-        return {}
-    return _normalize_presentation_plan(output.get("presentation"))
-
-
-def _normalize_presentation_plan(raw):
-    if not isinstance(raw, dict):
-        return {}
-    ptype = str(raw.get("type") or "").strip().lower()
-    if ptype not in ("text", "image", "audio", "document"):
-        return {}
-    src = str(raw.get("from") or raw.get("payload_from") or "").strip()
-    out = {"type": ptype}
-    if src:
-        out["from"] = src
-    channel = str(raw.get("channel") or "").strip().lower()
-    if channel in ("iphone", "kindle", "android", "speaker"):
-        out["channel"] = channel
-    endpoint = str(raw.get("endpoint") or "").strip()
-    if endpoint:
-        out["endpoint"] = endpoint
-    endpoint_id = str(raw.get("endpoint_id") or "").strip()
-    if endpoint_id:
-        out["endpoint_id"] = endpoint_id
-    return out
-
-
-def _caps_in_plan(intent):
-    caps = []
-    for step in intent.get("execution_plan") or []:
-        if isinstance(step, dict) and step.get("capability"):
-            caps.append(str(step.get("capability") or "").strip())
-    return caps
-
-
 def _presentation_kind_from_plan(intent):
     """Use the planner's Presentation decision, not keyword matching on user text.
 
@@ -1966,77 +1526,6 @@ def _presentation_kind_from_plan(intent):
     return "", ""
 
 
-def _as_asset_ref(raw):
-    """Normalize an AssetRef. URLs and paths are not identity."""
-    if isinstance(raw, str):
-        aid = raw.strip()
-        if not aid:
-            return None
-        if aid.startswith("{") or aid.startswith("["):
-            try:
-                parsed = json.loads(aid)
-            except (TypeError, ValueError):
-                parsed = None
-            if isinstance(parsed, dict):
-                return _as_asset_ref(parsed)
-            if isinstance(parsed, list) and parsed:
-                return _as_asset_ref(parsed[0])
-        return {"asset_id": aid, "type": "image"}
-    if not isinstance(raw, dict):
-        return None
-    nested = raw.get("asset_ref")
-    if isinstance(nested, dict) and not str(raw.get("asset_id") or "").strip():
-        return _as_asset_ref(nested)
-    if isinstance(nested, str) and nested.strip().startswith("{") and not str(raw.get("asset_id") or "").strip():
-        return _as_asset_ref(nested)
-    aid = str(raw.get("asset_id") or "").strip()
-    if not aid:
-        return None
-    if aid.startswith("{"):
-        inner = _as_asset_ref(aid)
-        if inner:
-            return inner
-    out = {
-        "asset_id": aid,
-        "type": str(raw.get("type") or "image").strip() or "image",
-    }
-    mime = str(raw.get("mime_type") or "").strip()
-    if mime:
-        out["mime_type"] = mime
-    return out
-
-
-def _asset_media_family(ref) -> str:
-    """Best-effort media family of an AssetRef (image/audio/video/document/other)."""
-    if not isinstance(ref, dict):
-        return "other"
-    asset_type = str(ref.get("type") or "").strip().lower()
-    mime = str(ref.get("mime_type") or "").strip().lower()
-    if asset_type == "image" or mime.startswith("image/"):
-        return "image"
-    if asset_type == "audio" or mime.startswith("audio/"):
-        return "audio"
-    if asset_type == "video" or mime.startswith("video/"):
-        return "video"
-    if asset_type == "document" or mime.startswith(("application/", "text/")):
-        return "document"
-    return "other"
-
-
-def _is_previewable_document_ref(ref) -> bool:
-    """A document preview needs a real document artifact.
-
-    `asset.inventory` often hands back a `type=url` asset (mime `text/uri-list`) while the
-    step that produces the real PDF is still running. Previewing that link would make the
-    client try to render a URL as a document, so it is not previewable (#677).
-    """
-    if not isinstance(ref, dict):
-        return False
-    if str(ref.get("type") or "").strip().lower() == "url":
-        return False
-    return _asset_media_family(ref) == "document"
-
-
 def _asset_produced_by_intent(ref, intent) -> bool:
     """True when this intent's execution registered the asset (`assets.origin_intent_id`)."""
     if not isinstance(ref, dict):
@@ -2063,27 +1552,6 @@ def _enrich_asset_ref_from_catalog(ref):
     if mime:
         out["mime_type"] = mime
     return out
-
-
-def _parse_asset_refs_list(raw):
-    """Parse inventory-style asset_refs (JSON string or list) into AssetRef dicts."""
-    data = raw
-    if isinstance(data, str):
-        text = data.strip()
-        if not text:
-            return []
-        try:
-            data = json.loads(text)
-        except (TypeError, ValueError):
-            return []
-    if not isinstance(data, list):
-        return []
-    refs = []
-    for item in data:
-        ref = _as_asset_ref(item)
-        if ref:
-            refs.append(ref)
-    return refs
 
 
 def _collect_asset_ref(ctx, outputs):
@@ -2364,79 +1832,6 @@ def _capability_registry_fingerprint(catalog=None) -> str:
     tokens.sort()
     digest = hashlib.md5("\n".join(tokens).encode("utf-8")).hexdigest()
     return digest[:16]
-
-
-def _score_capability_row_for_text(user_text: str, row: dict) -> int:
-    raw = str(user_text or "")
-    if not raw or not isinstance(row, dict):
-        return 0
-    score = 0
-    for trigger in row.get("typical_triggers") or []:
-        token = str(trigger or "").strip()
-        if token and token in raw:
-            score += 3
-    display = str(row.get("display_name") or "").strip()
-    if display and display in raw:
-        score += 5
-    recognize = str(row.get("planner_recognize") or "")
-    if display and display in recognize and any(
-        kw in raw for kw in ("空调", "制冷", "制热", "扫风")
-    ):
-        score += 2
-    return score
-
-
-def _catalog_matches_utterance(user_text: str, catalog) -> bool:
-    """True when the catalog clearly advertises a row for this utterance."""
-    best = 0
-    for row in catalog or []:
-        if not isinstance(row, dict):
-            continue
-        best = max(best, _score_capability_row_for_text(user_text, row))
-    return best >= 3
-
-
-def _planner_empty_plan_unreliable(user_text: str, llm_answer: str, catalog) -> bool:
-    """Empty plan is suspect when the live catalog already matches the utterance."""
-    output = extract_llm_output(llm_answer)
-    plan = output.get("plan") if isinstance(output, dict) else None
-    if isinstance(plan, list) and plan:
-        return False
-    return _catalog_matches_utterance(user_text, catalog)
-
-
-def _normalize_capability_id(cap: str, catalog_ids: set[str] | frozenset[str]) -> str:
-    cid = str(cap or "").strip()
-    if not cid:
-        return ""
-    if cid in catalog_ids:
-        return cid
-    aliased = _CAPABILITY_ID_ALIASES.get(cid)
-    if aliased and aliased in catalog_ids:
-        return aliased
-    return aliased or cid
-
-
-def _normalize_capability_notes(raw, catalog=None):
-    catalog_ids = frozenset(
-        str(row.get("capability_id") or "").strip()
-        for row in (catalog or [])
-        if isinstance(row, dict) and str(row.get("capability_id") or "").strip()
-    )
-    notes = _as_capability_notes(raw)
-    out: list[dict[str, str]] = []
-    for note in notes:
-        cap = str(note.get("capability") or "").strip()
-        reason = str(note.get("reason") or "").strip()
-        if cap in catalog_ids:
-            # Advertised capability cannot be "missing".
-            continue
-        normalized = _normalize_capability_id(cap, catalog_ids)
-        if normalized in catalog_ids:
-            continue
-        if normalized or reason:
-            out.append({"capability": normalized, "reason": reason})
-    return out
 
 
 def _persist_available_capabilities(intent_id, capabilities):
@@ -3109,7 +2504,6 @@ def extract_llm_plan(llm_answer):
     return output.get("plan") or []
 
 
-
 def make_execution_plan(llm_plan):
     """
     make real world plan, make it work
@@ -3151,19 +2545,6 @@ def _assert_capture_upload_colocation(plan) -> None:
             raise CaptureUploadSplitError(
                 "拍照和上传被派到了不同设备，本机照片句柄不能跨机。"
             )
-
-
-def _provider_display_name(svc, view, edge_id):
-    for raw in (
-        (svc or {}).get("display_name"),
-        (view or {}).get("display_name"),
-        (svc or {}).get("edge_name"),
-        edge_id,
-    ):
-        name = str(raw or "").strip()
-        if name:
-            return name
-    return str(edge_id or "")
 
 
 def online_capability_providers(capability_id):
@@ -3221,45 +2602,6 @@ def online_capability_providers(capability_id):
     return providers
 
 
-def _instance_key(row):
-    name = str((row or {}).get("display_name") or "").strip()
-    sid = str((row or {}).get("service_id") or "").strip()
-    return name or sid
-
-
-def _group_providers_by_instance(providers):
-    groups = {}
-    for row in providers or []:
-        key = _instance_key(row)
-        if not key:
-            key = str((row or {}).get("edge_id") or "")
-        groups.setdefault(key, []).append(row)
-    return groups
-
-
-def _ambiguous_capability_edge_msg(providers):
-    names = []
-    seen = set()
-    for row in providers or []:
-        name = _instance_key(row)
-        if name and name not in seen:
-            seen.add(name)
-            names.append(name)
-    listed = "、".join(names) if names else "（未命名）"
-    return (
-        "家里有多台同能力设备，请说清楚要用哪一台。"
-        f"候选：{listed}。"
-    )
-
-
-def _is_mac_runtime_row(row):
-    dt = str((row or {}).get("device_type") or "").strip().lower()
-    if dt == "mac":
-        return True
-    hint = str((row or {}).get("client_hint") or "").strip().lower()
-    return "laptop" in hint or hint in ("living-room-mac", "livingroom-mac")
-
-
 def _prefer_provider(candidates, intent, preferred_edge_id=None, capability_id=None):
     rows = [row for row in (candidates or []) if isinstance(row, dict)]
     if not rows:
@@ -3285,105 +2627,6 @@ def _prefer_provider(candidates, intent, preferred_edge_id=None, capability_id=N
             if str(row.get("edge_id") or "").strip() == pref:
                 return row
     return rows[0]
-
-
-def _user_text_matches_instance(text, instance_key):
-    blob = str(text or "").strip().casefold()
-    key = str(instance_key or "").strip()
-    if not blob or not key:
-        return False
-    folded_key = key.casefold()
-    if folded_key in blob:
-        return True
-    for token in _instance_match_tokens(key):
-        if token in blob:
-            return True
-    return False
-
-
-_APPLIANCE_TOKEN_NOISE = frozenset(
-    {
-        "camera",
-        "photo",
-        "相机",
-        "拍照",
-        "cam",
-        "the",
-        "and",
-        "or",
-        "on",
-        "ok",
-    }
-)
-
-
-def _instance_match_tokens(instance_key: str) -> list[str]:
-    key = str(instance_key or "").strip()
-    if not key:
-        return []
-    tokens: list[str] = []
-    seen: set[str] = set()
-    for raw in (key, key.replace(".", " ").replace("_", " ")):
-        folded = raw.casefold()
-        if folded and folded not in seen:
-            seen.add(folded)
-            tokens.append(folded)
-        for part in re.split(r"[\s_/·\-]+", raw):
-            part = part.strip()
-            if len(part) < 2:
-                continue
-            folded_part = part.casefold()
-            if folded_part not in seen:
-                seen.add(folded_part)
-                tokens.append(folded_part)
-    return [t for t in tokens if t not in _APPLIANCE_TOKEN_NOISE]
-
-
-def _service_id_matches_text(service_id, text) -> bool:
-    sid = str(service_id or "").strip()
-    if not sid:
-        return False
-    return _user_text_matches_instance(text, sid.replace(".", " ").replace("_", " "))
-
-
-def _matched_instance_groups(groups, text):
-    hits = []
-    for key, rows in (groups or {}).items():
-        if _user_text_matches_instance(text, key):
-            hits.append((key, rows))
-            continue
-        for row in rows:
-            if _service_id_matches_text(row.get("service_id"), text):
-                hits.append((key, rows))
-                break
-    if len(hits) > 1:
-        hits.sort(key=lambda item: len(item[0]), reverse=True)
-        longest = len(hits[0][0])
-        hits = [item for item in hits if len(item[0]) == longest]
-    return hits
-
-
-def _step_appliance_name(step):
-    inp = (step or {}).get("input_constrict")
-    if not isinstance(inp, dict):
-        return ""
-    for field in ("appliance", "label", "device_id"):
-        val = str(inp.get(field) or "").strip()
-        if val:
-            return val
-    return ""
-
-
-def _ensure_appliance_param(step, provider):
-    name = str((provider or {}).get("display_name") or "").strip()
-    if not name or not isinstance(step, dict):
-        return
-    inp = step.get("input_constrict")
-    if not isinstance(inp, dict):
-        inp = {}
-        step["input_constrict"] = inp
-    if not str(inp.get("appliance") or "").strip():
-        inp["appliance"] = name
 
 
 def _assign_runtime_edge_id(step, cid, intent=None):
@@ -3531,7 +2774,6 @@ def do_execution_plan(intent_id, execution_plan):
     #if commands_queue.get('gopro') is None:
     #    commands_queue['gopro'] = []
     #commands_queue['gopro'].append('shutter')
-
 
 
 # Runtime / capability routing liveness. Design: ~2× edge heartbeat interval
@@ -5517,9 +4759,6 @@ def notify_step_status_update(intent_id, step_id):
     )
 
 
-
-
-
 @app.route("/api/v1/intent/<intent_id>/status", methods=["POST"])
 def notify_intent_status_update(intent_id):
 
@@ -5652,7 +4891,6 @@ def upload_handler():
     )
 
 
-_ASSET_UPLOAD_TYPES = frozenset({"image", "audio", "video", "document"})
 _ASSET_UPLOAD_DIR = None  # resolved lazily under UPLOAD_DIR / "assets"
 
 
@@ -5661,75 +4899,6 @@ def _asset_upload_dir() -> Path:
     if _ASSET_UPLOAD_DIR is None:
         _ASSET_UPLOAD_DIR = UPLOAD_DIR / "assets"
     return _ASSET_UPLOAD_DIR
-
-
-_ASSET_NAME_ERROR = "文件名含非法字符。只允许字母、数字、中文、-、_。"
-_ASSET_STEM_RE = re.compile(r"^[A-Za-z0-9\u4e00-\u9fff_-]+$")
-_ASSET_EXT_RE = re.compile(r"^[A-Za-z0-9]{1,8}$")
-
-
-class AssetFilenameError(ValueError):
-    """Upload filename failed charset / path cleaning."""
-
-
-def _clean_upload_filename(raw: str) -> str:
-    """Drop directories and normalize Unicode. Does not rewrite charset."""
-    name = Path(str(raw or "").replace("\\", "/")).name.strip()
-    return unicodedata.normalize("NFC", name)
-
-
-def _validate_asset_filename(raw: str) -> str:
-    """Return cleaned basename, or raise AssetFilenameError."""
-    cleaned = _clean_upload_filename(raw)
-    if not cleaned or cleaned in {".", ".."}:
-        raise AssetFilenameError(_ASSET_NAME_ERROR)
-    stem = Path(cleaned).stem
-    suffix = Path(cleaned).suffix.lower()
-    if not stem or not _ASSET_STEM_RE.fullmatch(stem):
-        raise AssetFilenameError(_ASSET_NAME_ERROR)
-    if len(stem) > 80:
-        raise AssetFilenameError(_ASSET_NAME_ERROR)
-    if suffix:
-        ext = suffix.lstrip(".")
-        if not _ASSET_EXT_RE.fullmatch(ext):
-            raise AssetFilenameError(_ASSET_NAME_ERROR)
-        return f"{stem}.{ext}"
-    return stem
-
-
-def _safe_on_disk_name(original: str, *, prefix: str) -> str:
-    """Filesystem key: {prefix}_{validated_basename}."""
-    validated = _validate_asset_filename(original)
-    token = str(prefix or "").strip() or uuid.uuid4().hex[:12]
-    return f"{token}_{validated}"
-
-
-def _infer_asset_type(*, mime_type: str, filename: str, explicit: str) -> str:
-    raw = str(explicit or "").strip().lower()
-    if raw in _ASSET_UPLOAD_TYPES:
-        return raw
-    mime = str(mime_type or "").strip().lower()
-    if mime.startswith("image/"):
-        return "image"
-    if mime.startswith("audio/"):
-        return "audio"
-    if mime.startswith("video/"):
-        return "video"
-    name = str(filename or "").strip().lower()
-    if name.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".bmp")):
-        return "image"
-    if name.endswith((".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac")):
-        return "audio"
-    if name.endswith((".mp4", ".mov", ".m4v", ".webm", ".mkv")):
-        return "video"
-    if name.endswith((".pdf", ".doc", ".docx", ".txt", ".rtf")):
-        return "document"
-    return "image"
-
-
-def _guess_mime(filename: str, fallback: str = "application/octet-stream") -> str:
-    mime, _ = mimetypes.guess_type(filename or "")
-    return (mime or "").strip() or fallback
 
 
 def _explicit_img_server_upload_url() -> str:
@@ -7625,23 +6794,6 @@ def get_edge_view(edge_id):
     return jsonify(_edge_public_view(rec))
 
 
-def _asset_representation_storage(storage: dict, representation: str) -> dict:
-    """Map logical representation → img_server keys (original vs preview thumbnail)."""
-    base = dict(storage or {})
-    rep = str(representation or "original").strip().lower()
-    if rep not in ("preview", "thumbnail"):
-        return base
-    preview_key = str(base.get("preview_key") or base.get("cloud_preview_key") or "").strip()
-    if not preview_key:
-        return base
-    out = dict(base)
-    out["key"] = preview_key
-    cloud_preview = str(base.get("cloud_preview_key") or preview_key).strip()
-    if cloud_preview:
-        out["cloud_key"] = cloud_preview
-    return out
-
-
 def _asset_media_urls(storage: dict, request_url: str) -> list:
     """Candidate HTTP URLs the Brain can fetch img_server bytes from.
 
@@ -7691,106 +6843,6 @@ def _asset_media_urls(storage: dict, request_url: str) -> list:
         except Exception:
             pass
     return urls
-
-
-_ASSET_META_KEYS = (
-    "asset_id",
-    "type",
-    "mime_type",
-    "size_bytes",
-    "size",
-    "status",
-    "metadata",
-    "created_at",
-    "updated_at",
-    "expires_at",
-)
-
-_STORAGE_URL_KEYS = frozenset({"url", "photo_url", "image_url"})
-
-
-def _asset_metadata_only(record: dict) -> dict:
-    record = record or {}
-    out = {k: record[k] for k in _ASSET_META_KEYS if record.get(k) is not None}
-    aid = str(record.get("asset_id") or "").strip()
-    if aid:
-        out["asset_id"] = aid
-    return out
-
-
-def _asset_stream_href(asset_id: str, intent_id: str, *, representation: str = "original") -> str:
-    params = {"intent_id": str(intent_id or "").strip()}
-    rep = str(representation or "original").strip().lower()
-    if rep and rep != "original":
-        params["representation"] = rep
-    qs = urllib.parse.urlencode(params)
-    return "/api/v1/assets/%s/content?%s" % (urllib.parse.quote(str(asset_id), safe=""), qs)
-
-
-def _url_asset_target(record: dict) -> str:
-    """url 资产的授权目标链接（metadata.url_target，仅 type=url 携带）。"""
-    meta = (record or {}).get("metadata")
-    meta = meta if isinstance(meta, dict) else {}
-    raw = str(meta.get("url_target") or "").strip()
-    try:
-        parsed = urllib.parse.urlparse(raw)
-    except Exception:
-        return ""
-    if parsed.scheme in ("http", "https") and parsed.netloc:
-        return raw
-    return ""
-
-
-def _asset_runtime_storage(storage: dict) -> dict:
-    if not isinstance(storage, dict):
-        return {}
-    return {k: v for k, v in storage.items() if k not in _STORAGE_URL_KEYS}
-
-
-def _asset_endpoint_view(record: dict, intent_id: str) -> dict:
-    out = _asset_metadata_only(record)
-    if str((record or {}).get("type") or "").strip().lower() == "url":
-        target = _url_asset_target(record)
-        if target:
-            out["url"] = target
-    aid = str((record or {}).get("asset_id") or "").strip()
-    iid = str(intent_id or "").strip()
-    if aid and iid:
-        storage = (record or {}).get("storage")
-        rep = "original"
-        if isinstance(storage, dict):
-            has_preview = bool(
-                str(storage.get("preview_key") or storage.get("cloud_preview_key") or "").strip()
-            )
-            has_original = bool(str(storage.get("key") or storage.get("cloud_key") or "").strip())
-            if has_preview and not has_original:
-                rep = "preview"
-            elif has_preview:
-                rep = "preview"
-        out["stream"] = {"href": _asset_stream_href(aid, iid, representation=rep)}
-    return out
-
-
-def _asset_runtime_view(record: dict) -> dict:
-    out = _asset_metadata_only(record)
-    if str((record or {}).get("type") or "").strip().lower() == "url":
-        target = _url_asset_target(record)
-        if target:
-            out["url"] = target
-    storage = _asset_runtime_storage((record or {}).get("storage"))
-    if storage:
-        out["storage"] = storage
-    return out
-
-
-def _asset_public_view(record: dict, *, include_storage: bool = False) -> dict:
-    """Metadata-only snapshot (no storage URLs / no url-asset target). Legacy
-    include_storage ignored: storage URLs are never handed to the public."""
-    out = _asset_metadata_only(record)
-    meta = out.get("metadata")
-    if isinstance(meta, dict) and "url_target" in meta:
-        out["metadata"] = {k: v for k, v in meta.items() if k != "url_target"}
-    return out
 
 
 def _caller_is_runtime(edge_id: str) -> bool:
@@ -8007,52 +7059,6 @@ def _asset_has_read_grant(asset_id: str, intent_id: str) -> bool:
         if isinstance(found, dict):
             rec = found
     return _asset_client_may_read(rec, intent_id)
-
-
-def _parse_asset_day_window(day: str, timezone_name: str | None) -> tuple[float, float] | None:
-    """Return [start, end) unix seconds for day=today|yesterday|YYYY-MM-DD in timezone."""
-    raw = str(day or "").strip().lower()
-    if not raw:
-        return None
-    tz_name = str(timezone_name or "").strip() or "Asia/Shanghai"
-    try:
-        tz = ZoneInfo(tz_name)
-    except ZoneInfoNotFoundError:
-        tz = ZoneInfo("Asia/Shanghai")
-    now = datetime.now(tz)
-    if raw in ("today", "今天"):
-        start_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    elif raw in ("yesterday", "昨天"):
-        start_dt = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
-    else:
-        try:
-            y, m, d = [int(p) for p in raw.split("-", 2)]
-            start_dt = datetime(y, m, d, tzinfo=tz)
-        except (TypeError, ValueError):
-            return None
-    end_dt = start_dt + timedelta(days=1)
-    return start_dt.timestamp(), end_dt.timestamp()
-
-
-def _parse_asset_time_bound(raw: str | None) -> float | None:
-    text = str(raw or "").strip()
-    if not text:
-        return None
-    try:
-        return float(text)
-    except ValueError:
-        pass
-    try:
-        # ISO-8601; treat naive as local/Asia/Shanghai wall time.
-        if text.endswith("Z"):
-            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        else:
-            dt = datetime.fromisoformat(text)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
-        return dt.timestamp()
-    except ValueError:
-        return None
 
 
 @app.route("/api/v1/assets", methods=["GET"])
@@ -8479,7 +7485,6 @@ def skill_handler():
         return quick_speak(tip, True)
     except queue.Full:
         return quick_speak("当前咨询人数较多，请稍后再试", False)
-
 
 
 @app.route("/doubao_chat", methods=["GET"])

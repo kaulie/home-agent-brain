@@ -30,6 +30,12 @@ cd server && python3 -m unittest discover -s tests -t .
 
 部分用例依赖本机库表或可选依赖；失败先分清是否本次引入。改路由 / 广告 / presentation 后至少跑相关测试。
 
+核心拆分的模块边界回归可单独运行：
+`cd server && python3 -m unittest tests.test_core_modules -v`。
+它验证独立导入无启动副作用、实时 provider 回调、规划/shortcut 差异、
+JSON 解析、展示策略、资源视图和实例匹配。涉及运行状态的集成行为仍由
+`tests/test_home_brain.py` 等原有测试覆盖；拆分时应与同环境 main 基线比较。
+
 ## 提交与敏感物
 
 不要提交 `server/.env`、`ARK_API_KEY`、`BRAIN_ADMIN_TOKEN`、sqlite 库、`uploads/`。

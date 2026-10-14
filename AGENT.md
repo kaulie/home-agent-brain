@@ -66,6 +66,8 @@ Runtime / planner 初始化会要求：**优先读目标仓库根目录的 `AGEN
 | 要改的东西 | 去哪 |
 |---|---|
 | HTTP 路由 / intent / presentation | `server/home_brain.py` |
+| 规划输出解析 / 执行计划规范化 | `server/planner_output.py`、`server/plan_normalization.py` |
+| 展示策略 / Asset 值处理 / 实例匹配 | `server/presentation_policy.py`、`server/asset_values.py`、`server/provider_selection.py` |
 | 规划器广告 / 组合分解 | `server/capability_ads.py`、`server/marketplace_catalog.py` |
 | 系统能力（clock 等） | `server/system_capabilities.py` |
 | 心跳 / 在线服务表 | `server/edge_services.py` |

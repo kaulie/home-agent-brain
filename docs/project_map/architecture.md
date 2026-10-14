@@ -19,6 +19,26 @@ iPhone / Android / Mac Edge / 其它 Intent Source
 
 不要再起第二个 Brain 进程「分担路由」。LAN 与 Cloud 是两个部署实例。
 
+## 核心内部模块
+
+`server/home_brain.py` 保留 Flask 路由、共享缓存/队列、数据库与在线设备访问、
+后台 worker 和启动逻辑。以下同级模块承接内部值处理与策略，不启动服务、线程，
+不读取数据库，也不反向导入入口模块：
+
+| 模块 | 职责 |
+|---|---|
+| `planner_output.py` | Planner 输出 schema、严格 JSON / shadow 宽松 JSON 解析、能力缺口规范化与匹配评分 |
+| `plan_normalization.py` | 设备输出门控、资源引用规范化、query 修复、拍照上传组合折叠 |
+| `presentation_policy.py` | 用户展示偏好、语音输入输出对称策略、计划能力与人数文本 |
+| `asset_values.py` | AssetRef、文件名/MIME、资源对外视图和时间过滤边界 |
+| `provider_selection.py` | 实例名称匹配、分组、歧义提示和 appliance 参数 |
+
+入口显式重新导出原有 helper 名称，现有调用方仍可从 `home_brain` 导入。
+执行计划三个入口保留薄适配函数，将当前 `online_capability_providers` 回调传给
+规范化模块；设备查询按调用发生，不在模块导入时缓存。资源存储、授权和展示
+组装等依赖实时状态的逻辑仍由入口协调。两种导入布局（`server.*` 与 server
+目录下直接导入）均受支持。
+
 ## 规划与广告
 
 1. `marketplace_catalog.py` 拉 `HOME_AGENT_MARKETPLACE_URL`（默认 `http://127.0.0.1:4250`）的 `/api/v1/export`，磁盘缓存、TTL 约 60s。
