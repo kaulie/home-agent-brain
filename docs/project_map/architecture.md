@@ -32,7 +32,9 @@ iPhone / Android / Mac Edge / 其它 Intent Source
 | `presentation_policy.py` | 用户展示偏好、语音输入输出对称策略、计划能力与人数文本 |
 | `asset_values.py` | AssetRef、文件名/MIME、资源对外视图和时间过滤边界 |
 | `provider_selection.py` | 实例名称匹配、分组、歧义提示和 appliance 参数 |
-| `model_response.py` | ARK / Qwen 响应值解析、请求记录脱敏、HTTP 错误解析和用户提示；网络调用仍在入口 |
+| `model_response.py` | ARK / Qwen 响应值解析、请求记录脱敏、HTTP 错误解析和用户提示 |
+| `llm_provider.py` | 可替换的 planner/chat 传输边界（``get_planner_transport`` / ``set_planner_transport``） |
+| `volcano_ark_client.py` | 火山方舟 Ark ``/chat/completions`` HTTP 客户端与 planner/runner payload 构造 |
 | `execution_step_values.py` | 步骤状态判定、拍照成功后的上传失败措辞、系统步骤前序检查与上下文参数引用解析 |
 | `brain_env.py` | 进程路径、`.env` 装载顺序、方舟/Qwen/日志目录等环境常量 |
 | `planner_query_cache.py` | 规划器 mock 缓存：文本清洗、cache key、TTL 读写 |
