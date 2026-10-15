@@ -416,6 +416,8 @@ if __package__:
     )
     from .plan_presentation_kind import presentation_kind_from_plan as _presentation_kind_from_plan_impl
     from . import img_server_client as _img
+    from .llm_provider import get_planner_transport
+    from .volcano_ark_client import ARK_HTTP_401_SENTINEL, build_planner_payload, build_runner_payload
 else:
     import brain_env as _brain_env
     from planner_query_cache import (
@@ -449,6 +451,8 @@ else:
     )
     from plan_presentation_kind import presentation_kind_from_plan as _presentation_kind_from_plan_impl
     import img_server_client as _img
+    from llm_provider import get_planner_transport
+    from volcano_ark_client import ARK_HTTP_401_SENTINEL, build_planner_payload, build_runner_payload
 
 _HERE = _brain_env.SERVER_DIR
 MODEL_ID = _brain_env.MODEL_ID
@@ -2026,53 +2030,31 @@ def call_ark(user_text, session_id, user_id, intent_id, intent_base_time, intent
 
     # Planner rules live only in task_planner_system_prompt.md.en (compact_prompt).
     # This-turn intent + catalog belong in the user message.
-    headers = {"Content-Type":"application/json", "Authorization":f"Bearer {ARK_API_KEY}"}
-    payload_obj = {
-            "model":MODEL_ID,
-             "messages":[
-                 {
-                     "role":"system",
-                     "content": system_prompt,
-                 },
-                 {
-                     "role":"user",
-                     "content": user_prompt,
-                 }
-             ],
-             "max_tokens":4096,
-             "temperature": 0.2,
-             "top_p": 0.1,
-             "stream": False,
-             "response_format": {"type": "json_object"},
-             "extra_body": {
-                "thinking": {
-                    "type": "disabled"
-                }
-             },
-             }
-    payload = json.dumps(payload_obj).encode("utf-8")
+    payload_obj = build_planner_payload(system_prompt, user_prompt, model=MODEL_ID)
     safe_payload = json.dumps(_without_secrets(payload_obj), ensure_ascii=False)
     if len(safe_payload) > 8000:
         safe_payload = safe_payload[:8000] + "...(truncated)"
     log.debug("ark payload: %s", safe_payload)
-    log.info("ark request model=%s payload_bytes=%d", MODEL_ID, len(payload))
+    log.info("ark request model=%s payload_bytes=%d", MODEL_ID, len(safe_payload))
     ans = ""
     cost_ms = 0
     response_json = None
-    start_time = time.time()
     try:
         log.info("invoke doubao api begin")
-        req = urllib.request.Request(ARK_URL, data=payload, headers=headers)
-        resp = urllib.request.urlopen(req, timeout=180)
-        raw_body = resp.read().decode("utf-8")
-        cost_ms = int((time.time() - start_time) * 1000)
+        chat_resp = get_planner_transport()(payload_obj, 180.0)
+        cost_ms = chat_resp.cost_ms
+        response_json = chat_resp.response_json
+        ans = chat_resp.content
+        http_status = int((response_json or {}).get("http_status") or 0)
+        if ans == ARK_HTTP_401_SENTINEL or http_status >= 400:
+            _record_ark_planner_call(False)
+        else:
+            _record_ark_planner_call(True)
         log.info("invoke doubao api end:%s", cost_ms)
-        _record_ark_planner_call(True)
-        resp_data = json.loads(raw_body)
-        response_json = resp_data
-        llm_logger.info(f"cost_ms={cost_ms} | question={user_text} | answer={resp_data}")
-        log.info("get res:%s", resp_data)
-        ans = resp_data["choices"][0]["message"]["content"]
+        llm_logger.info(
+            "cost_ms=%s | question=%s | answer=%s", cost_ms, user_text, response_json
+        )
+        log.info("get res:%s", response_json)
         log.info("get ans: %s", ans)
         if _planner_empty_plan_unreliable(user_text, ans, catalog) and _retry < 1:
             llm_logger.info(
@@ -2093,15 +2075,7 @@ def call_ark(user_text, session_id, user_id, intent_id, intent_base_time, intent
             log.info("put into cache for user query:%s", user_text)
         else:
             log.info("skip planner cache (empty plan with matching catalog) question=%s", user_text)
-    except urllib.error.HTTPError as e:
-        cost_ms = int((time.time() - start_time) * 1000)
-        _record_ark_planner_call(False)
-        log.exception("call doubao api error: %s", e)
-        response_json = _ark_http_error_json(e)
-        if int(getattr(e, "code", 0) or 0) == 401:
-            ans = "__ARK_HTTP_401__"
     except Exception as e:
-        cost_ms = int((time.time() - start_time) * 1000)
         _record_ark_planner_call(False)
         log.exception("call doubao api error: %s", e)
     return _ark_result(
@@ -3012,7 +2986,7 @@ def _process_llm_task(task):
             notes = extract_llm_capability_notes(ans, catalog=_capability_registry_for_prompt())
             fail_msg = None
             if not stored_plan:
-                if str(ans).strip() == "__ARK_HTTP_401__":
+                if str(ans).strip() == ARK_HTTP_401_SENTINEL:
                     fail_msg = "规划服务 401，检查 ARK_API_KEY"
                 else:
                     fail_msg = _ark_http_error_msg(fields.get("response_json"))
@@ -6851,26 +6825,17 @@ def chat():
         return jsonify(error="缺少提问内容"), 400
     full_prompt = SYS_PROMPT_RUNNER.format(user_question=user_msg)
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {ARK_API_KEY}"
-    }
-    req_body = json.dumps({
-        "model": MODEL_ID,
-        "messages": [{"role": "user", "content": full_prompt}],
-        "temperature": 0.7,
-        "max_tokens": 120
-    }).encode("utf-8")
-
+    payload_obj = build_runner_payload(full_prompt, model=MODEL_ID)
     try:
-        req = urllib.request.Request(ARK_URL, data=req_body, headers=headers)
-        resp = urllib.request.urlopen(req, timeout=120)
-        resp_data = json.loads(resp.read().decode("utf-8"))
+        chat_resp = get_planner_transport()(payload_obj, 120.0)
+        http_status = int((chat_resp.response_json or {}).get("http_status") or 0)
+        if chat_resp.content == ARK_HTTP_401_SENTINEL or http_status >= 400:
+            _record_ark_planner_call(False)
+            return jsonify(reply="规划服务不可用，请稍后再试")
         _record_ark_planner_call(True)
-        log.info("%s", resp_data)
-        ans = resp_data["choices"][0]["message"]["content"]
-        log.info("%s", ans)
-        return jsonify(reply=ans)
+        log.info("%s", chat_resp.response_json)
+        log.info("%s", chat_resp.content)
+        return jsonify(reply=chat_resp.content)
     except urllib.error.URLError as e:
         _record_ark_planner_call(False)
         err_msg = f"网络读取超时，模型生成内容较长，当前网络不稳定"

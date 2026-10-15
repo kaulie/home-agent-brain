@@ -39,6 +39,8 @@ class CoreModuleTests(unittest.TestCase):
             "plan_speak_steps",
             "plan_presentation_kind",
             "img_server_client",
+            "llm_provider",
+            "volcano_ark_client",
         )
         for prefix, cwd in (("", SERVER), ("server.", SERVER.parent)):
             with self.subTest(prefix=prefix):
