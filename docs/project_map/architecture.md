@@ -34,6 +34,15 @@ iPhone / Android / Mac Edge / 其它 Intent Source
 | `provider_selection.py` | 实例名称匹配、分组、歧义提示和 appliance 参数 |
 | `model_response.py` | ARK / Qwen 响应值解析、请求记录脱敏、HTTP 错误解析和用户提示；网络调用仍在入口 |
 | `execution_step_values.py` | 步骤状态判定、拍照成功后的上传失败措辞、系统步骤前序检查与上下文参数引用解析 |
+| `brain_env.py` | 进程路径、`.env` 装载顺序、方舟/Qwen/日志目录等环境常量 |
+| `planner_query_cache.py` | 规划器 mock 缓存：文本清洗、cache key、TTL 读写 |
+| `intent_origin.py` | 本进程是 `lan` 还是 `cloud`（`BRAIN_ORIGIN`） |
+| `intent_status_values.py` | Intent 状态别名规范化 |
+| `endpoint_participant_values.py` | Endpoint 声明、Runtime capability 列表、TV/endpoint token 解析 |
+| `intent_source_context.py` | 入单时的 Input Source Context（device/endpoint/capability） |
+| `plan_speak_steps.py` | `notify.speak` / wake-echo 计划步模板与不可产出 speak 步过滤 |
+| `plan_presentation_kind.py` | 从 planner presentation 与已排 capability 推断展示 type/from |
+| `img_server_client.py` | 资产字节写入 img-server 或 cloud 本地 `gopropics/assets` |
 
 入口显式重新导出原有 helper 名称，现有调用方仍可从 `home_brain` 导入。
 执行计划三个入口保留薄适配函数，将当前 `online_capability_providers` 回调传给

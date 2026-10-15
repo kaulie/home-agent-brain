@@ -22,9 +22,24 @@ import provider_selection as providers
 
 class CoreModuleTests(unittest.TestCase):
     def test_helpers_import_without_starting_brain_in_both_layouts(self):
-        modules = ("asset_values", "plan_normalization", "planner_output",
-                   "presentation_policy", "provider_selection",
-                   "model_response", "execution_step_values")
+        modules = (
+            "asset_values",
+            "plan_normalization",
+            "planner_output",
+            "presentation_policy",
+            "provider_selection",
+            "model_response",
+            "execution_step_values",
+            "brain_env",
+            "planner_query_cache",
+            "intent_origin",
+            "intent_status_values",
+            "endpoint_participant_values",
+            "intent_source_context",
+            "plan_speak_steps",
+            "plan_presentation_kind",
+            "img_server_client",
+        )
         for prefix, cwd in (("", SERVER), ("server.", SERVER.parent)):
             with self.subTest(prefix=prefix):
                 script = (
