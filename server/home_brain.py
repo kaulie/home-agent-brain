@@ -382,6 +382,215 @@ else:
     )
 
 
+# --- split modules (see docs/project_map/architecture.md) ---
+if __package__:
+    from . import brain_env as _brain_env
+    from .planner_query_cache import (
+        CACHE_TTL,
+        clean_text,
+        get_cache,
+        get_cache_key,
+        mock_cache,
+        set_cache,
+    )
+    from .intent_origin import instance_intent_origin, resolve_intent_origin
+    from .intent_status_values import (
+        EMPTY_PLAN_MSG as _EMPTY_PLAN_MSG,
+        STATUS_ALIASES as _STATUS_ALIASES,
+        TERMINAL_STATUSES as _TERMINAL_STATUSES,
+        normalize_status as _normalize_status,
+    )
+    from . import endpoint_participant_values as _epv
+    from .intent_source_context import (
+        SOURCE_INPUT_CAPABILITY as _SOURCE_INPUT_CAPABILITY,
+        SOURCE_INPUT_ENDPOINT as _SOURCE_INPUT_ENDPOINT,
+        build_source_context as _build_source_context,
+        issuer_participant_id as _issuer_participant_id,
+        ncm_play_issuer_id as _ncm_play_issuer_id,
+    )
+    from .plan_speak_steps import (
+        WAKE_ECHO_CAPABILITY,
+        drop_unproducible_speak_steps as _drop_unproducible_speak_steps_fn,
+        notify_speak_plan_step as _notify_speak_plan_step,
+        wake_echo_plan_step as _wake_echo_plan_step,
+    )
+    from .plan_presentation_kind import presentation_kind_from_plan as _presentation_kind_from_plan_impl
+    from . import img_server_client as _img
+else:
+    import brain_env as _brain_env
+    from planner_query_cache import (
+        CACHE_TTL,
+        clean_text,
+        get_cache,
+        get_cache_key,
+        mock_cache,
+        set_cache,
+    )
+    from intent_origin import instance_intent_origin, resolve_intent_origin
+    from intent_status_values import (
+        EMPTY_PLAN_MSG as _EMPTY_PLAN_MSG,
+        STATUS_ALIASES as _STATUS_ALIASES,
+        TERMINAL_STATUSES as _TERMINAL_STATUSES,
+        normalize_status as _normalize_status,
+    )
+    import endpoint_participant_values as _epv
+    from intent_source_context import (
+        SOURCE_INPUT_CAPABILITY as _SOURCE_INPUT_CAPABILITY,
+        SOURCE_INPUT_ENDPOINT as _SOURCE_INPUT_ENDPOINT,
+        build_source_context as _build_source_context,
+        issuer_participant_id as _issuer_participant_id,
+        ncm_play_issuer_id as _ncm_play_issuer_id,
+    )
+    from plan_speak_steps import (
+        WAKE_ECHO_CAPABILITY,
+        drop_unproducible_speak_steps as _drop_unproducible_speak_steps_fn,
+        notify_speak_plan_step as _notify_speak_plan_step,
+        wake_echo_plan_step as _wake_echo_plan_step,
+    )
+    from plan_presentation_kind import presentation_kind_from_plan as _presentation_kind_from_plan_impl
+    import img_server_client as _img
+
+_HERE = _brain_env.SERVER_DIR
+MODEL_ID = _brain_env.MODEL_ID
+ARK_API_KEY = _brain_env.ARK_API_KEY
+ARK_URL = _brain_env.ARK_URL
+ARK_RESPONSES_URL = _brain_env.ARK_RESPONSES_URL
+PROMPT_FILE = _brain_env.PROMPT_FILE
+QWEN_PROMPT_FILE = _brain_env.QWEN_PROMPT_FILE
+QWEN_PLANNER_URL = _brain_env.QWEN_PLANNER_URL
+QWEN_PLANNER_MODEL = _brain_env.QWEN_PLANNER_MODEL
+QWEN_PLANNER_TIMEOUT_SEC = _brain_env.QWEN_PLANNER_TIMEOUT_SEC
+DUEROS_PUSH_URL = _brain_env.DUEROS_PUSH_URL
+SKILL_APP_ID = _brain_env.SKILL_APP_ID
+SKILL_ACCESS_TOKEN = _brain_env.SKILL_ACCESS_TOKEN
+LOG_DIR = _brain_env.LOG_DIR
+
+
+def _load_dotenv(path: Path) -> None:
+    _brain_env.load_dotenv(path)
+
+
+def _default_log_dir() -> Path:
+    return _brain_env.default_log_dir()
+
+
+def _endpoint_supported_types(rec):
+    return _epv.endpoint_supported_types(rec)
+
+
+def _endpoint_ids_for_participant(rec, pres_type=None):
+    return _epv.endpoint_ids_for_participant(rec, pres_type)
+
+
+def _primary_endpoint_id(rec, pres_type=None):
+    return _epv.primary_endpoint_id(rec, pres_type)
+
+
+def _is_endpoint_participant(rec):
+    return _epv.is_endpoint_participant(rec)
+
+
+def _declared_role(rec, role):
+    return _epv.declared_role(rec, role)
+
+
+def _runtime_capabilities(rec):
+    return _epv.runtime_capabilities(rec)
+
+
+def _declared_capability(rec, capability_id):
+    return _epv.declared_capability(rec, capability_id)
+
+
+def _resolve_endpoint_token(token, listed, listed_map):
+    return _epv.resolve_endpoint_token(token, listed, listed_map)
+
+
+def _tv_response_participant(listed):
+    return _epv.tv_response_participant(listed)
+
+
+def _presentation_kind_from_plan(intent):
+    return _presentation_kind_from_plan_impl(intent, plan_emits_field=_plan_emits_field)
+
+
+def _drop_unproducible_speak_steps(plan):
+    return _drop_unproducible_speak_steps_fn(plan, plan_emits_field=_plan_emits_field)
+
+
+_ASSET_UPLOAD_DIR = None  # lazy under UPLOAD_DIR / "assets"; tests reset this global
+
+
+def _asset_upload_dir() -> Path:
+    global _ASSET_UPLOAD_DIR
+    if _ASSET_UPLOAD_DIR is None:
+        _ASSET_UPLOAD_DIR = UPLOAD_DIR / "assets"
+    return _ASSET_UPLOAD_DIR
+
+
+def _put_bytes_on_local_upload(data: bytes, *, filename: str, mime_type: str) -> dict:
+    upload_dir = _asset_upload_dir()
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    saved_as = _safe_on_disk_name(filename, prefix=uuid.uuid4().hex[:8])
+    dest = upload_dir / saved_as
+    dest.write_bytes(data)
+    return {
+        "backend": "local_upload",
+        "saved_as": saved_as,
+        "public_base": "",
+        "url": "",
+    }
+
+
+def _explicit_img_server_upload_url() -> str:
+    return _img.explicit_img_server_upload_url()
+
+
+def _img_server_upload_url() -> str:
+    return _img.img_server_upload_url()
+
+
+def _img_server_internal_base() -> str:
+    return _img.img_server_internal_base()
+
+
+def _use_local_upload_store() -> bool:
+    return _img.use_local_upload_store()
+
+
+def _store_uploaded_asset_bytes(data: bytes, *, filename: str, mime_type: str) -> dict:
+    if _use_local_upload_store():
+        stored = _put_bytes_on_local_upload(
+            data, filename=filename, mime_type=mime_type
+        )
+        stored.setdefault("backend", "local_upload")
+        return stored
+    stored = _put_bytes_on_img_server(
+        data, filename=filename, mime_type=mime_type
+    )
+    stored.setdefault("backend", "img_server")
+    return stored
+
+
+def _img_server_health_public_base() -> str:
+    return _img.img_server_health_public_base()
+
+
+def _lan_img_server_public_base() -> str:
+    return _img.lan_img_server_public_base()
+
+
+def _img_server_public_base() -> str:
+    return _img.img_server_public_base()
+
+
+def _put_bytes_on_img_server(
+    data: bytes, *, filename: str, mime_type: str, timeout_sec: float = 20.0
+) -> dict:
+    return _img.put_bytes_on_img_server(
+        data, filename=filename, mime_type=mime_type, timeout_sec=timeout_sec
+    )
+
 def _fold_capture_upload_composite(plan):
     return _plan_normalization._fold_capture_upload_composite(
         plan, online_capability_providers=online_capability_providers
@@ -404,10 +613,6 @@ app = Flask(__name__)
 
 # ====================== 配置区 Mock 内存缓存（本地测试不用Redis） ======================
 # 模拟Redis内存缓存，生产替换为真实redis客户端
-mock_cache = {}
-# 缓存改为队列：key=sessionId，value=list(按顺序存储多条回答)
-session_result_cache = {}
-CACHE_TTL = 60 # 缓存30分钟
 # 串行任务队列，最大50排队（Ark / 执行规划路径）
 task_queue = queue.Queue(maxsize=50)
 # Qwen 对照专用队列：不入执行路径，不得阻塞 Ark worker
@@ -418,72 +623,6 @@ llm_running_lock = threading.Lock()
 # provider: []
 # eg. neteasemusic: [a, b, c]
 commands_queue = {}
-
-# 火山方舟配置（密钥只读环境变量 / 同目录 .env，不要写进仓库）
-_HERE = Path(__file__).resolve().parent
-
-
-def _load_dotenv(path: Path) -> None:
-    try:
-        raw = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return
-    for line in raw.splitlines():
-        text = line.strip()
-        if not text or text.startswith("#") or "=" not in text:
-            continue
-        key, _, val = text.partition("=")
-        key = key.strip()
-        val = val.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = val
-
-
-# .env 装载顺序（先加载的一方生效，后面的不会覆盖）：
-#   1) <runtime>/backend/.env —— 平台（agent-control-plane-deployment）只保留 backend/ 下的
-#      运行期文件（backend/{.env,data/,runtime.pid,server.log}），生产把密钥放这里；
-#   2) server/.env —— 老位置 / 本地开发；
-#   3) <repo>/.env —— 更老的兼容位置。
-_load_dotenv(_HERE.parent / "backend" / ".env")
-_load_dotenv(_HERE / ".env")
-if _HERE.name == "server":
-    _load_dotenv(_HERE.parent / ".env")
-MODEL_ID = os.environ.get("ARK_MODEL_ID", "ep-20260712174403-5jcgs")
-ARK_API_KEY = os.environ.get("ARK_API_KEY", "")
-ARK_URL = os.environ.get(
-    "ARK_URL",
-    "https://ark.cn-beijing.volces.com/api/v3/chat/completions",
-)
-ARK_RESPONSES_URL = os.environ.get(
-    "ARK_RESPONSES_URL",
-    "https://ark.cn-beijing.volces.com/api/v3/responses",
-)
-PROMPT_FILE = _HERE / "prompts" / "task_planner_system_prompt.md.en"
-QWEN_PROMPT_FILE = _HERE / "prompts" / "task_planner_system_prompt.qwen-small.md.en"
-QWEN_PLANNER_URL = (
-    os.environ.get("QWEN_PLANNER_URL") or "http://115.190.153.53:8090/chat"
-).strip()
-QWEN_PLANNER_MODEL = (os.environ.get("QWEN_PLANNER_MODEL") or "Qwen2.5-0.5B-Instruct").strip()
-QWEN_PLANNER_TIMEOUT_SEC = float(os.environ.get("QWEN_PLANNER_TIMEOUT_SEC") or "180")
-
-
-# DuerOS推送接口配置
-DUEROS_PUSH_URL = "https://api.dueros.com/skill/v1/push"
-SKILL_APP_ID = "25ca93b5-40b6-8ce7-8b37-78a03afb9606"
-SKILL_ACCESS_TOKEN = "技能服务AccessToken" # DuerOS开发者后台获取
-
-
-def _default_log_dir() -> Path:
-    env = (os.environ.get("BRAIN_LOG_DIR") or "").strip()
-    if env:
-        return Path(env)
-    parent_logs = _HERE.parent / "llm_logs"
-    if _HERE.name == "server" and parent_logs.is_dir():
-        return parent_logs
-    return _HERE / "llm_logs"
-
-
-LOG_DIR = _default_log_dir()
 
 
 def init_brain_logger():
@@ -528,46 +667,9 @@ app.logger.propagate = False
 
 
 # ====================== 文本清洗 & 缓存key生成 ======================
-def clean_text(text: str) -> str:
-    #text = re.sub(r"[^\u4e00-\u9fa5]", "", text)
-    text = re.sub(r"[^\u4e00-\u9fa50-9]", "", text)
-    drop_words = ["帮我", "给我", "麻烦", "能不能", "可以吗", "一下", "一份", "请给我", "请帮我"]
-    for w in drop_words:
-        text = text.replace(w, "")
-    replace_dict = {"方案": "计划", "备赛": "训练", "慢跑": "轻松跑"}
-    for old, new in replace_dict.items():
-        text = text.replace(old, new)
-    return text
-
-def get_cache_key(raw_q: str, source: str = "", catalog_fingerprint: str = "") -> str:
-    clean_q = clean_text(raw_q)
-    fp = str(catalog_fingerprint or "").strip()
-    md5_str = hashlib.md5(f"{source}|{clean_q}|{fp}".encode("utf-8")).hexdigest()
-    return f"run_global:{md5_str}"
-
-# Mock 缓存读写封装（替换真实Redis）
-def get_cache(q, source="", *, catalog_fingerprint: str = ""):
-    key = get_cache_key(q, source, catalog_fingerprint)
-    item = mock_cache.get(key)
-    if not item:
-        return None
-    # 判断缓存是否过期
-    if time.time() > item["expire"]:
-        del mock_cache[key]
-        return None
-    return item["data"]
-
-def set_cache(q, ans, source="", *, catalog_fingerprint: str = ""):
-    key = get_cache_key(q, source, catalog_fingerprint)
-    expire_ts = time.time() + CACHE_TTL
-    mock_cache[key] = {
-        "data": ans,
-        "expire": expire_ts
-    }
 
 
 WAKE_PLANNER = "voice.stream.wake"
-WAKE_ECHO_CAPABILITY = "voicewakeup.echo"
 
 
 def _wake_ack_text() -> str:
@@ -632,117 +734,9 @@ def _maybe_attach_speak_delivery(intent):
     return
 
 
-def _endpoint_supported_types(rec):
-    types = []
-    raw = rec.get("endpoints") if isinstance(rec, dict) else None
-    if isinstance(raw, list):
-        for item in raw:
-            if isinstance(item, dict):
-                for t in (
-                    item.get("supported")
-                    or item.get("types")
-                    or item.get("supported_presentation")
-                    or []
-                ):
-                    types.append(str(t))
-                kind = item.get("type") or item.get("channel")
-                if kind:
-                    kind_s = str(kind)
-                    if kind_s not in types:
-                        types.append(kind_s)
-                    # Functional display endpoint implies image/text presentation.
-                    if kind_s == "display":
-                        for implied in ("image", "text"):
-                            if implied not in types:
-                                types.append(implied)
-            elif item:
-                types.append(str(item))
-    return types or ["text", "image"]
 
 
-def _endpoint_ids_for_participant(rec, pres_type=None):
-    """Stable endpoint_id values declared on a participant (Endpoint role)."""
-    ids = []
-    raw = rec.get("endpoints") if isinstance(rec, dict) else None
-    if not isinstance(raw, list):
-        return ids
-    want = str(pres_type or "").strip().lower()
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        eid = str(item.get("endpoint_id") or item.get("id") or "").strip()
-        if not eid:
-            continue
-        if want:
-            supported = [
-                str(t).lower()
-                for t in (
-                    item.get("supported")
-                    or item.get("types")
-                    or item.get("supported_presentation")
-                    or []
-                )
-            ]
-            kind = str(item.get("type") or item.get("channel") or "").lower()
-            if kind == "display" and want in ("image", "text", "video", "html", "audio"):
-                ids.append(eid)
-                continue
-            if supported and want not in supported and want != kind:
-                continue
-        ids.append(eid)
-    return ids
 
-
-def _primary_endpoint_id(rec, pres_type=None):
-    ids = _endpoint_ids_for_participant(rec, pres_type)
-    return ids[0] if ids else ""
-
-
-def _ncm_play_issuer_id(intent):
-    """Intent Source participant for ncm_plays (not the Mac executor)."""
-    intent = intent or {}
-    ctx = intent.get("ctx_param") or intent.get("context") or {}
-    if not isinstance(ctx, dict):
-        ctx = {}
-    src = ctx.get("source_context") or intent.get("source_context") or {}
-    if isinstance(src, dict):
-        for key in ("input_participant_id", "device_id"):
-            pid = str(src.get(key) or "").strip()
-            if pid:
-                return pid
-    return str(intent.get("edge_id") or intent.get("participant_id") or "").strip()
-
-
-def _issuer_participant_id(intent):
-    intent = intent or {}
-    return str(intent.get("edge_id") or intent.get("participant_id") or "").strip()
-
-
-def _is_endpoint_participant(rec):
-    if not isinstance(rec, dict) or not rec:
-        return False
-    if rec.get("role_endpoint"):
-        return True
-    return "endpoint" in (rec.get("roles") or [])
-
-
-def _declared_role(rec, role):
-    role = str(role or "").strip()
-    if not rec or not role:
-        return False
-    if rec.get(f"role_{role}"):
-        return True
-    return role in (rec.get("roles") or [])
-
-
-def _declared_capability(rec, capability_id):
-    want = str(capability_id or "").strip()
-    if not rec or not want:
-        return False
-    for cap in _runtime_capabilities(rec):
-        if cap.get("capability_id") == want:
-            return True
-    return False
 
 
 def _participant_snapshot(pid, rec=None):
@@ -1021,105 +1015,10 @@ def _issuer_has_wake_echo(pid):
     return ok
 
 
-def _notify_speak_plan_step(issuer_id, text, step=1):
-    """One execution_plan step: notify.speak on the issuing edge."""
-    return {
-        "step": int(step),
-        "capability": "notify.speak",
-        "assigned_edge_id": str(issuer_id or "").strip(),
-        "input_constrict": {"text": text},
-        "output_constrict": {},
-    }
 
 
-def _wake_echo_plan_step(issuer_id, text, step=1):
-    """Wake fast-path: voicewakeup.echo on the issuing voice.stream edge."""
-    return {
-        "step": int(step),
-        "capability": WAKE_ECHO_CAPABILITY,
-        "assigned_edge_id": str(issuer_id or "").strip(),
-        "input_constrict": {"text": text},
-        "output_constrict": {
-            "echo_text": {"type": "string", "data_dest": "context"},
-        },
-    }
 
 
-_SOURCE_INPUT_CAPABILITY = {
-    "voice": "voice.input",
-    "visual": "visual.input",
-    "text": "text.input",
-}
-_SOURCE_INPUT_ENDPOINT = {
-    "voice": "microphone",
-    "visual": "camera",
-    "text": "keyboard",
-}
-
-
-def _build_source_context(edge_id, source, inbound=None):
-    """Persist Input Source Context on the intent (device / endpoint / capability)."""
-    inbound = inbound if isinstance(inbound, dict) else {}
-    raw = inbound.get("source_context") if isinstance(inbound.get("source_context"), dict) else {}
-    source_l = str(source or "text").strip().lower() or "text"
-    device_id = str(raw.get("device_id") or edge_id or "").strip()
-    endpoint_id = str(raw.get("endpoint_id") or inbound.get("source_id") or "").strip()
-    if not endpoint_id:
-        endpoint_id = _SOURCE_INPUT_ENDPOINT.get(source_l, "keyboard")
-    capability_id = str(raw.get("capability_id") or "").strip()
-    if not capability_id:
-        capability_id = _SOURCE_INPUT_CAPABILITY.get(source_l, "text.input")
-    out = {}
-    if device_id:
-        out["device_id"] = device_id
-    if endpoint_id:
-        out["endpoint_id"] = endpoint_id
-    if capability_id:
-        out["capability_id"] = capability_id
-    return out
-
-
-def _resolve_endpoint_token(token, listed, listed_map):
-    token = str(token or "").strip()
-    if not token:
-        return ""
-    if token in listed_map:
-        return token
-    for pid, rec in listed:
-        if _primary_endpoint_id(rec) == token:
-            return pid
-        raw = rec.get("endpoints") if isinstance(rec, dict) else None
-        if not isinstance(raw, list):
-            continue
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            eid = str(item.get("endpoint_id") or item.get("id") or "").strip()
-            if eid == token:
-                return pid
-    return ""
-
-
-def _tv_response_participant(listed):
-    for pid, rec in listed:
-        dt = str((rec or {}).get("device_type") or "").lower()
-        if dt in ("chromecast", "tv", "google_tv", "cast"):
-            return pid
-        raw = (rec or {}).get("endpoints") if isinstance(rec, dict) else None
-        if not isinstance(raw, list):
-            continue
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            blob = " ".join(
-                str(item.get(k) or "")
-                for k in ("endpoint_id", "id", "type", "channel")
-            ).lower()
-            if any(mark in blob for mark in ("chromecast", "living_room_tv", "living-room-tv")):
-                return pid
-            if "tv" in blob.split() or blob.endswith(".tv") or blob.startswith("tv"):
-                return pid
-    return ""
 
 
 def _explicit_response_participant(intent):
@@ -1191,31 +1090,6 @@ def _plan_emits_field(plan, field):
     return False
 
 
-def _speak_text_token(step):
-    ic = step.get("input_constrict") if isinstance(step.get("input_constrict"), dict) else {}
-    return str(ic.get("text") or "").strip()
-
-
-def _drop_unproducible_speak_steps(plan):
-    """LLM often adds notify.speak $answer_text even when no step emits it (music.play)."""
-    steps = [dict(s) for s in (plan or []) if isinstance(s, dict)]
-    producers = [
-        s
-        for s in steps
-        if str(s.get("capability") or "").strip()
-        not in ("notify.speak", WAKE_ECHO_CAPABILITY)
-    ]
-    kept = []
-    for step in steps:
-        cap = str(step.get("capability") or "").strip()
-        if cap == "notify.speak":
-            token = _speak_text_token(step)
-            if token.startswith("$") and not _plan_emits_field(producers, token):
-                continue
-        kept.append(step)
-    for idx, step in enumerate(kept, start=1):
-        step["step"] = idx
-    return kept
 
 
 def _append_issuer_speak_step(intent, plan):
@@ -1495,80 +1369,6 @@ def _world_state_nodes():
     return nodes
 
 
-def _presentation_kind_from_plan(intent):
-    """Use the planner's Presentation decision, not keyword matching on user text.
-
-    Assembled `{type, asset_ref|text}` is output, not the plan. Trust a skeleton
-    that includes `from`, or type=audio (spoken delivery). Else infer from
-    capabilities the planner already scheduled.
-    """
-    raw = intent.get("presentation")
-    planned = {}
-    raw_type = str((raw or {}).get("type") or "").strip().lower() if isinstance(raw, dict) else ""
-    if isinstance(raw, dict) and (
-        raw.get("from") or raw.get("payload_from") or raw_type == "audio"
-    ):
-        planned = _normalize_presentation_plan(raw)
-    if not planned.get("type"):
-        planned = _normalize_presentation_plan(intent.get("presentation_plan"))
-    if planned.get("type"):
-        src = planned.get("from")
-        plan = intent.get("execution_plan") or []
-        # Planner often names answer_text. Drop it when no step produces that field
-        # (music.play has empty output_schema — speaking $answer_text would fail hydrate).
-        if src and plan and not _plan_emits_field(plan, src):
-            planned = {}
-        else:
-            return _voice_symmetric_presentation_kind(
-                intent, planned["type"], src or ""
-            )
-    caps = _caps_in_plan(intent)
-    if any(c in _DISPLAY_CAPS for c in caps):
-        return "image", "asset_ref"
-    if "music.recognize" in caps:
-        return _voice_symmetric_presentation_kind(intent, "text", "answer_text")
-    if "clock.now" in caps:
-        return _voice_symmetric_presentation_kind(intent, "text", "time_text")
-    if "map.route.estimate" in caps:
-        return _voice_symmetric_presentation_kind(intent, "text", "answer_text")
-    if "math.calculate" in caps:
-        return _voice_symmetric_presentation_kind(intent, "text", "answer_text")
-    if "chat.smalltalk" in caps:
-        return _voice_symmetric_presentation_kind(intent, "text", "reply")
-    if "display.audio" in caps or "xiaodu.play" in caps or "xiaodu.control" in caps or "display.audio.control" in caps:
-        # 电视 / 小度出声是执行目标；回给发声端的是一句确认（语音 → TTS 念 status_text）。
-        return _voice_symmetric_presentation_kind(intent, "text", "status_text")
-    if "asset.inventory" in caps:
-        if _plan_wants_document_presentation(intent):
-            return "document", "asset_ref"
-        if _plan_wants_image_presentation(intent):
-            return "image", "asset_ref"
-        return _voice_symmetric_presentation_kind(intent, "text", "answer_text")
-    if "image.ocr" in caps:
-        return _voice_symmetric_presentation_kind(intent, "text", "text")
-    if "capabilities.summary" in caps:
-        return "audio", "answer_text"
-    if "vision.ask" in caps:
-        return _voice_symmetric_presentation_kind(intent, "text", "answer_text")
-    if "query.content" in caps:
-        return _voice_symmetric_presentation_kind(intent, "text", "answer_text")
-    if "search.images" in caps:
-        return "image", "asset_refs"
-    if "vision.perceive" in caps:
-        return _voice_symmetric_presentation_kind(intent, "text", "summary")
-    if "light.set" in caps:
-        return _voice_symmetric_presentation_kind(intent, "text", "state")
-    if "climate.set" in caps:
-        return _voice_symmetric_presentation_kind(intent, "text", "status_text")
-    if "aquarium.set" in caps:
-        return _voice_symmetric_presentation_kind(intent, "text", "status_text")
-    if "lock.status" in caps:
-        return _voice_symmetric_presentation_kind(intent, "text", "status_text")
-    if "camera.capture" in caps or "camera.capture_and_upload" in caps:
-        return "image", "asset_ref"
-    if "document.scan" in caps or "visual.input" in caps:
-        return "image", "asset_ref"
-    return "", ""
 
 
 def _asset_produced_by_intent(ref, intent) -> bool:
@@ -2747,16 +2547,6 @@ ONLINE_TTL_SEC = 60
 # Presentation Endpoint liveness is not Runtime online TTL.
 # Phones/Kindles can miss beats; 5min = same window as clock-skew reject.
 ENDPOINT_TTL_SEC = 5 * 60
-_STATUS_ALIASES = {
-    "uploaded": "intent_received",
-    "waiting": "intent_waiting",
-    "success": "succeeded",
-    "completed": "succeeded",
-    "error": "failed",
-    "plan_failed": "failed",
-}
-_TERMINAL_STATUSES = frozenset({"succeeded", "failed"})
-_EMPTY_PLAN_MSG = "execution_plan 为空，无法调度"
 
 
 def _empty_plan_failure_msg(notes=None, llm_out=None):
@@ -2861,9 +2651,6 @@ def _apply_failure_presentation(intent, msg):
     return text
 
 
-def _normalize_status(raw):
-    text = str(raw or "").strip()
-    return _STATUS_ALIASES.get(text, text)
 
 
 def _stringify_step_outputs(step_outputs):
@@ -3359,33 +3146,7 @@ def push_speech_to_dueros(session_id, user_id, speech_text):
 
 bp = Blueprint("gopro_photos", __name__)
 UPLOAD_PATH = "/api/v1/photos/upload"
-_default_upload = _HERE / "gopropics"
-if not _default_upload.is_dir() and _HERE.name == "server":
-    _default_upload = _HERE.parent / "gopropics"
-if not _default_upload.is_dir():
-    _default_upload = _HERE / "uploads" / "gopro"
-UPLOAD_DIR = Path(os.environ.get("BRAIN_UPLOAD_DIR") or _default_upload)
-
-_INTENT_ORIGINS = ("lan", "cloud")
-
-
-def instance_intent_origin():
-    """Which Brain this process is: lan (local/dev) or cloud (cloud-server)."""
-    raw = (os.environ.get("BRAIN_ORIGIN") or "").strip().lower()
-    if raw in _INTENT_ORIGINS:
-        return raw
-    try:
-        here = str(_HERE.resolve())
-    except OSError:
-        here = ""
-    if here.startswith("/root/chat-gateway") or "/root/chat-gateway/" in here:
-        return "cloud"
-    return "lan"
-
-
-def resolve_intent_origin(value=None):
-    """Receiving Brain origin is authoritative. Client hints are ignored."""
-    return instance_intent_origin()
+UPLOAD_DIR = _img.UPLOAD_DIR
 
 
 def _brain_public_base_url() -> str:
@@ -4712,201 +4473,6 @@ def upload_handler():
     )
 
 
-_ASSET_UPLOAD_DIR = None  # resolved lazily under UPLOAD_DIR / "assets"
-
-
-def _asset_upload_dir() -> Path:
-    global _ASSET_UPLOAD_DIR
-    if _ASSET_UPLOAD_DIR is None:
-        _ASSET_UPLOAD_DIR = UPLOAD_DIR / "assets"
-    return _ASSET_UPLOAD_DIR
-
-
-def _explicit_img_server_upload_url() -> str:
-    return (
-        os.environ.get("BRAIN_IMG_UPLOAD_URL")
-        or os.environ.get("PHOTO_UPLOAD_URL")
-        or ""
-    ).strip().rstrip("/")
-
-
-def _img_server_upload_url() -> str:
-    return _explicit_img_server_upload_url() or "http://127.0.0.1:8080/api/v1/photos/upload"
-
-
-def _img_server_internal_base() -> str:
-    """Host prefix of the img-server this Brain writes to (loopback by default).
-
-    Used when the Brain itself must fetch asset bytes (content proxy,
-    materialization). img-server is co-located, so this endpoint is reachable
-    regardless of the LAN IP — the LAN-facing `public_base` is DHCP-volatile
-    and is therefore never persisted; it is only resolved fresh when a direct
-    LAN URL is needed at use time.
-    """
-    try:
-        parsed = urllib.parse.urlsplit(_img_server_upload_url())
-        if parsed.netloc:
-            return "%s://%s" % ((parsed.scheme or "http"), parsed.netloc)
-    except Exception:
-        pass
-    return "http://127.0.0.1:8080"
-
-
-def _use_local_upload_store() -> bool:
-    """Cloud Brain keeps bytes under gopropics/; it has no sidecar img-server :8080.
-
-    LAN always uses img-server. Ops can still point cloud Brain at a real
-    img-server by setting BRAIN_IMG_UPLOAD_URL or PHOTO_UPLOAD_URL.
-    """
-    if instance_intent_origin() != "cloud":
-        return False
-    return not _explicit_img_server_upload_url()
-
-
-def _put_bytes_on_local_upload(
-    data: bytes,
-    *,
-    filename: str,
-    mime_type: str,
-) -> dict:
-    """Write bytes under gopropics/assets. Catalog identity stays asset_ref."""
-    upload_dir = _asset_upload_dir()
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    saved_as = _safe_on_disk_name(filename, prefix=uuid.uuid4().hex[:8])
-    dest = upload_dir / saved_as
-    dest.write_bytes(data)
-    return {
-        "backend": "local_upload",
-        "saved_as": saved_as,
-        "public_base": "",
-        "url": "",
-    }
-
-
-def _store_uploaded_asset_bytes(
-    data: bytes,
-    *,
-    filename: str,
-    mime_type: str,
-) -> dict:
-    if _use_local_upload_store():
-        stored = _put_bytes_on_local_upload(
-            data, filename=filename, mime_type=mime_type
-        )
-        stored.setdefault("backend", "local_upload")
-        return stored
-    stored = _put_bytes_on_img_server(
-        data, filename=filename, mime_type=mime_type
-    )
-    stored.setdefault("backend", "img_server")
-    return stored
-
-
-def _img_server_health_public_base() -> str:
-    """Ask the co-located img-server for its own LAN public_base.
-
-    img-server is the single source of truth for the LAN URL it advertises
-    (it runs the same auto-detection, and `PHOTO_PUBLIC_BASE` can pin it).
-    We query its /health before falling back to our own LAN-IP detection so a
-    manually pinned value there can never diverge from what we store in DB.
-    """
-    upload_url = _img_server_upload_url().rstrip("/")
-    if not upload_url:
-        return ""
-    try:
-        parsed = urllib.parse.urlsplit(upload_url)
-        health_url = f"{parsed.scheme}://{parsed.netloc}/health"
-        with urllib.request.urlopen(health_url, timeout=2.0) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
-        payload = json.loads(raw) if raw.strip() else {}
-        base = str((payload or {}).get("public_base") or "").strip().rstrip("/")
-        if base.startswith("http://") or base.startswith("https://"):
-            return base
-    except Exception:
-        pass
-    return ""
-
-
-def _lan_img_server_public_base() -> str:
-    """LAN public base for this host's co-located img-server — auto-detected."""
-    try:
-        from mdns_service import lan_ipv4
-
-        ip = (lan_ipv4() or "127.0.0.1").strip()
-        if ip.startswith("127."):
-            ip = "127.0.0.1"
-        return f"http://{ip}:8080"
-    except Exception:
-        return "http://127.0.0.1:8080"
-
-
-def _img_server_public_base() -> str:
-    explicit = (
-        os.environ.get("BRAIN_IMG_PUBLIC_BASE")
-        or os.environ.get("PHOTO_PUBLIC_BASE")
-        or ""
-    ).strip().rstrip("/")
-    if explicit:
-        return explicit
-    if instance_intent_origin() == "cloud":
-        return "http://115.190.153.53:8080"
-    return _img_server_health_public_base() or _lan_img_server_public_base()
-
-
-def _put_bytes_on_img_server(
-    data: bytes,
-    *,
-    filename: str,
-    mime_type: str,
-    timeout_sec: float = 20.0,
-) -> dict:
-    """POST multipart file to img-server. Catalog identity stays asset_ref."""
-    upload_url = _img_server_upload_url()
-    if not upload_url:
-        raise RuntimeError("img-server upload URL is empty")
-    safe_name = Path(filename or "upload.bin").name or "upload.bin"
-    boundary = f"----BrainAsset{uuid.uuid4().hex}"
-    mime = (mime_type or "application/octet-stream").strip() or "application/octet-stream"
-    body = (
-        f"--{boundary}\r\n"
-        f'Content-Disposition: form-data; name="file"; filename="{safe_name}"\r\n'
-        f"Content-Type: {mime}\r\n\r\n"
-    ).encode("utf-8") + data + f"\r\n--{boundary}--\r\n".encode("utf-8")
-    req = urllib.request.Request(
-        upload_url,
-        data=body,
-        method="POST",
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=float(timeout_sec)) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
-            code = int(resp.getcode() or 0)
-    except urllib.error.HTTPError as e:
-        raw = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"img-server HTTP {e.code}: {raw[:300]}") from e
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        raise RuntimeError(f"img-server unreachable: {e}") from e
-    try:
-        payload = json.loads(raw) if raw.strip() else {}
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"img-server response not JSON (http={code}): {raw[:200]}") from e
-    if not isinstance(payload, dict) or not payload.get("ok"):
-        raise RuntimeError(f"img-server rejected upload: {payload!r}"[:300])
-    saved_as = str(payload.get("saved_as") or "").strip()
-    if not saved_as:
-        raise RuntimeError("img-server ok but missing saved_as")
-    public_base = _img_server_public_base()
-    url = str(payload.get("url") or "").strip()
-    if url.startswith("http://127.") or url.startswith("http://localhost"):
-        url = f"{public_base}/{Path(saved_as).name}"
-    elif not (url.startswith("http://") or url.startswith("https://")):
-        url = f"{public_base}/{Path(saved_as).name}"
-    return {
-        "saved_as": saved_as,
-        "public_base": public_base,
-        "url": url,
-    }
 
 
 @app.route("/api/v1/assets/upload", methods=["POST"])
@@ -5292,37 +4858,6 @@ def _record_admin_op(
         return
 
 
-def _runtime_capabilities(rec):
-    out = []
-    for svc in rec.get("services") or []:
-        if not isinstance(svc, dict):
-            continue
-        service_id = str(svc.get("service_id") or "").strip()
-        group = str(svc.get("group") or "").strip()
-        for cap in svc.get("capabilities") or []:
-            if not isinstance(cap, dict):
-                continue
-            cid = str(cap.get("capability_id") or "").strip()
-            if not cid:
-                continue
-            out.append(
-                {
-                    "capability_id": cid,
-                    "service_id": service_id,
-                    "group": group,
-                    "kind": str(cap.get("kind") or "").strip().lower(),
-                    "role": cap.get("role") or "",
-                    "planner_recognize": cap.get("planner_recognize") or "",
-                    "typical_triggers": list(cap.get("typical_triggers") or [])
-                    if isinstance(cap.get("typical_triggers"), list)
-                    else [],
-                    "do_not_dispatch": list(cap.get("do_not_dispatch") or [])
-                    if isinstance(cap.get("do_not_dispatch"), list)
-                    else [],
-                    "description": cap.get("description") or "",
-                }
-            )
-    return out
 
 
 def _admin_node_view(rec, *, policy_index):
