@@ -416,6 +416,14 @@ if __package__:
     )
     from .plan_presentation_kind import presentation_kind_from_plan as _presentation_kind_from_plan_impl
     from . import img_server_client as _img
+    from .admin_values import (
+        ADMIN_ROLE_LABELS as _ADMIN_ROLE_LABELS,
+        admin_node_title as _admin_node_title,
+        admin_policy_summary as _admin_policy_summary,
+        admin_target_title as _admin_target_title,
+        policy_items_from_body as _policy_items_from_body,
+        step_status_text as _step_status_text,
+    )
     from .llm_provider import get_planner_transport
     from .volcano_ark_client import ARK_HTTP_401_SENTINEL, build_planner_payload, build_runner_payload
 else:
@@ -451,6 +459,14 @@ else:
     )
     from plan_presentation_kind import presentation_kind_from_plan as _presentation_kind_from_plan_impl
     import img_server_client as _img
+    from admin_values import (
+        ADMIN_ROLE_LABELS as _ADMIN_ROLE_LABELS,
+        admin_node_title as _admin_node_title,
+        admin_policy_summary as _admin_policy_summary,
+        admin_target_title as _admin_target_title,
+        policy_items_from_body as _policy_items_from_body,
+        step_status_text as _step_status_text,
+    )
     from llm_provider import get_planner_transport
     from volcano_ark_client import ARK_HTTP_401_SENTINEL, build_planner_payload, build_runner_payload
 
@@ -4743,14 +4759,6 @@ def _admin_request_ok() -> bool:
     )
 
 
-_ADMIN_ROLE_LABELS = {
-    "intent_source": "发出 Intent",
-    "runtime": "执行 Runtime",
-    "endpoint": "呈现 Endpoint",
-    "observer": "观察 Observer",
-}
-
-
 def _admin_actor():
     got = (request.headers.get("X-Admin-Token") or "").strip()
     auth = str(request.headers.get("Authorization") or "")
@@ -4758,50 +4766,6 @@ def _admin_actor():
     if got or bearer:
         return "admin"
     return ""
-
-
-def _admin_node_title(rec, pid=""):
-    rec = rec if isinstance(rec, dict) else {}
-    name = str(rec.get("display_name") or "").strip()
-    loc = str(rec.get("location") or rec.get("room") or "").strip()
-    if loc and name and loc not in name:
-        return f"{loc} · {name}"
-    return name or str(pid or rec.get("participant_id") or rec.get("edge_id") or "").strip()
-
-
-def _admin_target_title(target_kind, target_id):
-    kind = str(target_kind or "").strip().lower()
-    tid = str(target_id or "").strip()
-    if kind == "role":
-        return _ADMIN_ROLE_LABELS.get(tid, tid)
-    return tid
-
-
-def _admin_policy_summary(
-    *,
-    participant_id="",
-    target_kind="",
-    target_id="",
-    enabled=None,
-    rec=None,
-    error=None,
-    action="",
-):
-    title = _admin_node_title(rec, participant_id) or participant_id or "节点"
-    target = _admin_target_title(target_kind, target_id)
-    if action == "policy_replace":
-        line = f"改写 {title} 的调度策略"
-    elif enabled is True:
-        line = f"打开 {title} 的 {target}".strip()
-    elif enabled is False:
-        line = f"关掉 {title} 的 {target}".strip()
-    elif target:
-        line = f"改 {title} 的 {target}".strip()
-    else:
-        line = f"管理 {title}"
-    if error:
-        return f"{line} 失败：{error}"
-    return line
 
 
 def _record_admin_op(
@@ -4892,31 +4856,6 @@ def _admin_node_view(rec, *, policy_index):
         "roles": roles,
         "runtime_capabilities": capabilities,
     }
-
-
-def _policy_items_from_body(body):
-    items = []
-    roles = body.get("roles") if isinstance(body.get("roles"), dict) else {}
-    for role, enabled in roles.items():
-        items.append(
-            {
-                "target_kind": "role",
-                "target_id": str(role),
-                "enabled": bool(enabled),
-            }
-        )
-    caps = body.get("capabilities") if isinstance(body.get("capabilities"), dict) else {}
-    for cap, enabled in caps.items():
-        items.append(
-            {
-                "target_kind": "capability",
-                "target_id": str(cap),
-                "enabled": bool(enabled),
-            }
-        )
-    extra = body.get("items") if isinstance(body.get("items"), list) else []
-    items.extend(item for item in extra if isinstance(item, dict))
-    return items
 
 
 def _list_admin_participants():
@@ -5239,19 +5178,6 @@ def _admin_intent_matches(job):
         return True
     status = _normalize_status(str(job.get("status") or job.get("intent_status") or ""))
     return status not in _TERMINAL_STATUSES
-
-
-def _step_status_text(step):
-    raw = step.get("status") if isinstance(step, dict) else None
-    if raw in (2, "2", "succeeded", "success", "completed"):
-        return "succeeded"
-    if raw in (3, "3", "failed", "error"):
-        return "failed"
-    if raw in (1, "1", "running"):
-        return "running"
-    if raw in (0, "0", None, ""):
-        return ""
-    return str(raw)
 
 
 def _admin_intent_view(intent):

@@ -34,10 +34,14 @@ curl -sS -X POST http://127.0.0.1:4220/api/deploy-notify \
   home_brain.py
   server/                           源码
   backend/.env                      平台 rsync --delete 时保留
+  backend/data/                     平台保留：默认库目录 + .venv
   backend/runtime.pid
   backend/server.log
 ```
 
-库不在 runtime：`BRAIN_DATA_DIR`（默认 `~/database/home-agent-brain`）。
+库不在代码树：`BRAIN_DATA_DIR`。代码默认（未设置）是 `server/data`（`server/data_paths.py:data_dir`），
+会被下次 rsync 清掉；所以 `start.sh` 在 `backend/.env` 缺这一项时写入
+`BRAIN_DATA_DIR=<runtime>/backend/data`（平台保留 `backend/data/`，venv 也在 `backend/data/.venv`）。
+本机生产常显式设为 `/Users/gaolei/database/home-agent-brain`。
 
 `start.sh` 以**脚本自身位置**定 runtime，忽略继承来的 `RUNTIME_DIR`（曾残留过 web-cursor）。
