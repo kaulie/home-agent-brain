@@ -41,6 +41,7 @@ class CoreModuleTests(unittest.TestCase):
             "img_server_client",
             "llm_provider",
             "volcano_ark_client",
+            "admin_values",
         )
         for prefix, cwd in (("", SERVER), ("server.", SERVER.parent)):
             with self.subTest(prefix=prefix):

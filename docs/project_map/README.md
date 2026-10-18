@@ -10,6 +10,7 @@
 | [deployment.md](deployment.md) | 部署：谁部署、端口、运行目录、数据落点 |
 | [release.md](release.md) | 发布：`build.sh` 产物、契约 |
 | [development.md](development.md) | 开发：工作区、分支、测试、提交边界 |
+| [brain-split-analysis.md](brain-split-analysis.md) | 核心拆分分析：职责盘点、os 旧方案核对、拆分候选排序 |
 
 根目录 [`AGENT.md`](../../AGENT.md) 是后续 agent 的入口：理解以本目录为准，滞后必须更新，与事实不符必须提出异议。
 
@@ -33,5 +34,12 @@
 6. **继续拆分（2026-10-14）。** 模型响应/错误处理与执行步骤值处理已迁入
    `model_response.py`、`execution_step_values.py`；入口保留原 helper 导出，
    不改变 Flask 进程、路由、网络请求和持久化的归属。
+7. **拆分分析（2026-10-18）。** 剩余可拆项与 os 旧方案核对见
+   [brain-split-analysis.md](brain-split-analysis.md)；Admin 展示 helper 已迁入
+   `admin_values.py`。`server.home_brain` 包式导入在 `main` 上本就失败
+   （`intent_complexity` 直接导入 `capability_ads`），双导入布局只对同级 helper 成立。
+8. **`BRAIN_DATA_DIR` 默认值（2026-10-18）。** 未设置时为 `server/data`；
+   平台部署由 `start.sh` 写成 `<runtime>/backend/data`。`build.sh` 注释里的
+   `~/database/home-agent-brain` 仍过时，待人决定是否修改。
 
 后续 agent 若发现上述条目被新代码推翻，删除或改写，不要累积过期异议。

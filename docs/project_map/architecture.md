@@ -45,12 +45,15 @@ iPhone / Android / Mac Edge / 其它 Intent Source
 | `plan_speak_steps.py` | `notify.speak` / wake-echo 计划步模板与不可产出 speak 步过滤 |
 | `plan_presentation_kind.py` | 从 planner presentation 与已排 capability 推断展示 type/from |
 | `img_server_client.py` | 资产字节写入 img-server 或 cloud 本地 `gopropics/assets` |
+| `admin_values.py` | Admin API 展示值：节点标题、策略变更摘要、策略条目解析、步骤状态文本 |
 
 入口显式重新导出原有 helper 名称，现有调用方仍可从 `home_brain` 导入。
 执行计划三个入口保留薄适配函数，将当前 `online_capability_providers` 回调传给
 规范化模块；设备查询按调用发生，不在模块导入时缓存。资源存储、授权和展示
-组装等依赖实时状态的逻辑仍由入口协调。两种导入布局（`server.*` 与 server
-目录下直接导入）均受支持。
+组装等依赖实时状态的逻辑仍由入口协调。上表同级模块支持两种导入布局（`server.*`
+与 server 目录下直接导入）；入口 `home_brain` 本身只支持 server 目录在 `sys.path`
+上的直接导入（`intent_complexity/matcher.py` 直接 `import capability_ads`）。
+剩余可拆项见 [brain-split-analysis.md](brain-split-analysis.md)。
 
 步骤状态的持久化、失败后放弃后续步骤、系统能力实际执行仍由入口协调；
 `execution_step_values.py` 只读取传入的计划和上下文，不查询运行状态。
