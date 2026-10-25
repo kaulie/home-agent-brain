@@ -39,6 +39,25 @@ def _user_asked_photo(text):
     return any(k in raw for k in keys)
 
 
+def _user_asked_document_scan(text):
+    """Explicit paper/document scan — not bare 「拍照」."""
+    raw = str(text or "")
+    keys = (
+        "扫描",
+        "扫一下",
+        "扫一扫",
+        "文档扫描",
+        "扫文档",
+        "扫小票",
+        "扫描小票",
+        "扫作业",
+        "扫描作业",
+        "document scan",
+        "scan document",
+    )
+    return any(k in raw for k in keys)
+
+
 def _intent_source_voice(intent) -> bool:
     return str((intent or {}).get("source") or "").strip().lower() == "voice"
 

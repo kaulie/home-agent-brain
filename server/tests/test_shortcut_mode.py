@@ -372,6 +372,25 @@ class ShortcutModeTest(unittest.TestCase):
         assert hit is not None
         self.assertEqual(hit.presentation, {"type": "image", "from": "asset_ref"})
 
+    def test_photo_capture_shortcut(self) -> None:
+        for text in ("拍照", "拍一张", "帮我拍照", "照相"):
+            with self.subTest(text=text):
+                plan = self._rule_hit(
+                    text, rule="photo_capture", goal="camera.capture_and_upload"
+                )
+                self.assertEqual(plan[0]["capability"], "camera.capture_and_upload")
+                hit = intercept(text)
+                assert hit is not None
+                self.assertEqual(hit.presentation, {"type": "image", "from": "asset_ref"})
+
+    def test_photo_capture_skips_scan_and_complex(self) -> None:
+        self.assertIsNone(intercept("扫描一下"))
+        self.assertIsNone(intercept("拍照然后投到电视"))
+        # Latest-photo view stays on photo_latest, not shutter.
+        hit = intercept("看最新照片")
+        assert hit is not None
+        self.assertEqual(hit.planner_meta.get("rule"), "photo_latest")
+
     def test_photo_latest_cast_shortcut(self) -> None:
         plan = self._rule_hit(
             "把最新照片投到电视上",

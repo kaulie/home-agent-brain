@@ -176,6 +176,7 @@ if __package__:
         _user_asked_speaker,
         _user_asked_tv,
         _user_asked_photo,
+        _user_asked_document_scan,
         _intent_source_voice,
         _user_asked_photo_count,
         _user_asked_see_photo,
@@ -268,6 +269,7 @@ else:
         _user_asked_speaker,
         _user_asked_tv,
         _user_asked_photo,
+        _user_asked_document_scan,
         _intent_source_voice,
         _user_asked_photo_count,
         _user_asked_see_photo,
@@ -2274,15 +2276,45 @@ class CaptureUploadSplitError(Exception):
     """camera.capture and asset.upload cannot run on different Runtimes."""
 
 
+_PHOTO_CAPTURE_CAPS = frozenset({"camera.capture", "camera.capture_and_upload"})
+_PHOTO_UNAVAILABLE_FALLBACK = (
+    "拍照不可用：没有在线相机。请确认 GoPro 已开机并连上相机热点；不会改用文档扫描。"
+)
+
+
+def _photo_capture_unavailable_msg() -> str:
+    """Prefer Runtime heartbeat unavailable_reason for camera.capture*."""
+    for _edge_id, view in _edges_snapshot().items():
+        if not isinstance(view, dict):
+            continue
+        for svc in view.get("services") or []:
+            if not isinstance(svc, dict):
+                continue
+            for cap in svc.get("capabilities") or []:
+                if not isinstance(cap, dict):
+                    continue
+                cid = str(cap.get("capability_id") or "").strip()
+                if cid not in _PHOTO_CAPTURE_CAPS:
+                    continue
+                if cap.get("available") is not False:
+                    continue
+                reason = str(cap.get("unavailable_reason") or "").strip()
+                if reason:
+                    return reason
+    return _PHOTO_UNAVAILABLE_FALLBACK
+
+
 def _assert_capture_upload_colocation(plan) -> None:
-    """Fail enqueue if capture/upload would split across edges or composite has no edge."""
+    """Fail enqueue if capture/upload would split across edges or capture has no edge."""
     rows = [s for s in (plan or []) if isinstance(s, dict)]
     for step in rows:
         cid = str(step.get("capability") or "").strip()
-        if composition_of(cid) != "composite":
-            continue
         edge = str(step.get("assigned_edge_id") or "").strip()
-        if not edge or edge == SYSTEM_EDGE_ID:
+        if edge and edge != SYSTEM_EDGE_ID:
+            continue
+        if cid in _PHOTO_CAPTURE_CAPS:
+            raise CaptureUploadSplitError(_photo_capture_unavailable_msg())
+        if composition_of(cid) == "composite":
             raise CaptureUploadSplitError(
                 "没有可用的拍照并上传设备。拍照和上传必须在同一台设备上完成。"
             )
@@ -2539,7 +2571,7 @@ ONLINE_TTL_SEC = 60
 ENDPOINT_TTL_SEC = 5 * 60
 
 
-def _empty_plan_failure_msg(notes=None, llm_out=None):
+def _empty_plan_failure_msg(notes=None, llm_out=None, *, intent=None):
     missing = (notes or {}).get("missing_capabilities") or []
     if missing and isinstance(missing[0], dict):
         reason = str(missing[0].get("reason") or "").strip()
@@ -2548,6 +2580,9 @@ def _empty_plan_failure_msg(notes=None, llm_out=None):
     reason = str((llm_out or {}).get("reason") or "").strip()
     if reason:
         return reason
+    text = str((intent or {}).get("text") or "")
+    if _user_asked_photo(text) and not _user_asked_document_scan(text):
+        return _photo_capture_unavailable_msg()
     return _EMPTY_PLAN_MSG
 
 
@@ -3007,7 +3042,9 @@ def _process_llm_task(task):
                 else:
                     fail_msg = _ark_http_error_msg(fields.get("response_json"))
                     if not fail_msg:
-                        fail_msg = _empty_plan_failure_msg(notes, llm_out)
+                        fail_msg = _empty_plan_failure_msg(
+                            notes, llm_out, intent=stored or intent
+                        )
                 mark_intent_failed(intent_id, fail_msg)
                 stored = get_intent(intent_id)
                 _apply_failure_presentation(stored, fail_msg)

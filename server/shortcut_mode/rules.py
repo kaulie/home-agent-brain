@@ -236,6 +236,71 @@ def match_photo_latest(text: str) -> RuleHit | None:
     )
 
 
+# Bare shutter — not 「看最新照片」, not 「扫描文档」.
+_PHOTO_CAPTURE_EXACT = (
+    "拍照",
+    "拍一张",
+    "拍张照",
+    "拍张照片",
+    "照相",
+    "拍一下",
+    "take photo",
+    "take a photo",
+)
+_PHOTO_CAPTURE_EXCLUDE = (
+    "扫描",
+    "扫一下",
+    "文档",
+    "小票",
+    "作业",
+    "投屏",
+    "投到",
+    "电视",
+    "最新",
+    "刚才",
+    "上一张",
+    "看图",
+    "什么字",
+    "怎么读",
+)
+
+
+def match_photo_capture(text: str) -> RuleHit | None:
+    """「拍照」→ camera.capture_and_upload (never document.scan)."""
+    t0 = time.perf_counter()
+    utterance = _rstrip_punct(_lstrip_courtesy(str(text or "").strip()))
+    if not utterance:
+        return None
+    if matches_any(utterance, _PHOTO_CAPTURE_EXCLUDE):
+        return None
+    compact = normalize_text(utterance)
+    exact = {normalize_text(x) for x in _PHOTO_CAPTURE_EXACT}
+    if compact not in exact:
+        return None
+
+    match_ms = int(round((time.perf_counter() - t0) * 1000))
+    return RuleHit(
+        rule="photo_capture",
+        goal="camera.capture_and_upload",
+        plan=[
+            {
+                "step": 1,
+                "capability": "camera.capture_and_upload",
+                "input_constrict": {},
+                "output_constrict": {
+                    "asset_ref": {
+                        "type": "object",
+                        "data_dest": "context",
+                        "required": True,
+                    }
+                },
+            }
+        ],
+        presentation={"type": "image", "from": "asset_ref"},
+        match_ms=match_ms,
+    )
+
+
 _AUDIO_CAST_NOUNS = ("音频", "录音", "语音")
 # 播放目标：电视（小米电视 DLNA）或小度音箱（DuerOS DLNA）—— 两者都是 DLNA 渲染器，
 # 但能力不同名（display.audio / xiaodu.play），所以规则按用户点名的设备来选步。
@@ -473,6 +538,7 @@ def match_rules(text: str) -> RuleHit | None:
         match_clock,
         match_climate,
         match_photo_latest,
+        match_photo_capture,
         match_latest_audio_cast,
         match_audio_control,
         match_tv_pdf_page,

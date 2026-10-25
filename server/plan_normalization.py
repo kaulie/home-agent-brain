@@ -2,12 +2,28 @@
 from __future__ import annotations
 
 if __package__:
-    from .presentation_policy import _DISPLAY_CAPS, _user_asked_speaker, _user_asked_tv, _user_asked_photo
+    from .presentation_policy import (
+        _DISPLAY_CAPS,
+        _user_asked_speaker,
+        _user_asked_tv,
+        _user_asked_photo,
+        _user_asked_document_scan,
+    )
 else:
-    from presentation_policy import _DISPLAY_CAPS, _user_asked_speaker, _user_asked_tv, _user_asked_photo
+    from presentation_policy import (
+        _DISPLAY_CAPS,
+        _user_asked_speaker,
+        _user_asked_tv,
+        _user_asked_photo,
+        _user_asked_document_scan,
+    )
 
 
 _DELIVERY_CAPS = {"endpoint.present", "endpoint.feedback", "notify.speak"}
+
+# Interactive paper scan (waits for user). Never a fallback for bare 「拍照」.
+_DOCUMENT_SCAN_CAPS = frozenset({"document.scan", "visual.input"})
+_CAMERA_CAPTURE_CAPS = frozenset({"camera.capture", "camera.capture_and_upload"})
 
 
 # TV output is gated on an explicit request; display.audio is not an image hint.
@@ -147,10 +163,16 @@ def _normalize_plan_asset_refs(plan):
 
 
 def sanitize_execution_plan(plan, intent=None, *, online_capability_providers):
-    """Strip delivery-as-capability and TV display unless the user asked for TV."""
+    """Strip delivery-as-capability and TV display unless the user asked for TV.
+
+    Also: bare 「拍照」 must not fall back to document.scan (interactive wait).
+    """
     text = str((intent or {}).get("text") or "")
     asked_tv = _user_asked_tv(text)
     asked_photo = _user_asked_photo(text)
+    asked_scan = _user_asked_document_scan(text)
+    # Photo shutter ≠ paper scan. When user said 拍照 (and not 扫描), drop scan caps.
+    block_scan_for_photo = asked_photo and not asked_scan
     cleaned = []
     for step in plan or []:
         if not isinstance(step, dict):
@@ -168,10 +190,11 @@ def sanitize_execution_plan(plan, intent=None, *, online_capability_providers):
             _user_asked_speaker(text) or _user_asked_tv(text)
         ):
             continue
+        if block_scan_for_photo and cap in _DOCUMENT_SCAN_CAPS:
+            continue
         cleaned.append(dict(step))
     has_capture = any(
-        str(s.get("capability") or "") in ("camera.capture", "camera.capture_and_upload")
-        for s in cleaned
+        str(s.get("capability") or "") in _CAMERA_CAPTURE_CAPS for s in cleaned
     )
     if asked_photo and not asked_tv:
         drop = {"notify.speak", "query.content"}
