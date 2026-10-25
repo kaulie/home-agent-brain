@@ -656,6 +656,34 @@ class HomeBrainPersistTest(unittest.TestCase):
         self.assertEqual([s["capability"] for s in cleaned], ["camera.capture"])
         self.assertEqual(cleaned[0]["step"], 1)
 
+    def test_sanitize_photo_drops_document_scan_fallback(self) -> None:
+        """intent #834: 「拍照」must not wait on interactive document.scan."""
+        intent = {"text": "拍照", "source": "text"}
+        plan = [
+            {
+                "step": 1,
+                "capability": "document.scan",
+                "input_constrict": {"mode": "document", "appliance": "Document Scanner"},
+            }
+        ]
+        cleaned = hb.sanitize_execution_plan(plan, intent)
+        self.assertEqual(cleaned, [])
+
+    def test_sanitize_keeps_document_scan_when_user_asks_scan(self) -> None:
+        intent = {"text": "扫描一下这个小票", "source": "text"}
+        plan = [{"step": 1, "capability": "document.scan"}]
+        cleaned = hb.sanitize_execution_plan(plan, intent)
+        self.assertEqual([s["capability"] for s in cleaned], ["document.scan"])
+
+    def test_empty_plan_failure_msg_for_photo_uses_camera_reason(self) -> None:
+        msg = hb._empty_plan_failure_msg(
+            {"missing_capabilities": []},
+            {},
+            intent={"text": "拍照"},
+        )
+        self.assertIn("拍照", msg)
+        self.assertIn("文档扫描", msg)
+
     def test_sanitize_keeps_display_when_user_asks_tv(self) -> None:
         intent = {"text": "拍张照片投到电视", "source": "voice"}
         plan = [
