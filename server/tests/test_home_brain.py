@@ -2411,6 +2411,57 @@ class HomeBrainPersistTest(unittest.TestCase):
         self.assertEqual(len(running), 1)
         self.assertEqual(running[0].get("ts"), edge_ts)
 
+    def test_terminal_status_backfills_skipped_hops(self) -> None:
+        """Intent #847: parsed→failed must not omit dispatched/running for UI."""
+        parsed_ts = 1793075048424
+        step_ts = 1793075052944
+        fail_ts = 1793075078919
+        iid = hb.new_intent(
+            {
+                "status": "intent_parsed",
+                "text": "播放歌曲十年",
+                "status_log": [
+                    {"status": "intent_received", "ts": parsed_ts - 4000},
+                    {"status": "intent_parsed", "ts": parsed_ts},
+                ],
+                "step_log": [
+                    {
+                        "step": 1,
+                        "status": 3,
+                        "ts": step_ts,
+                        "msg": "请先登录实名账号，执行 ncm-cli login 完成登录",
+                        "edge_id": "edge-node-x",
+                    }
+                ],
+            }
+        )
+        client = hb.app.test_client()
+        resp = client.post(
+            f"/api/v1/intent/{iid}/status",
+            json={
+                "intent_status": "failed",
+                "edge_node_id": "edge-node-x",
+                "msg": "网易云音乐登录已失效，请用手机网易云 App 重新扫码登录。",
+                "ts": fail_ts,
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        got = hb.get_intent(iid)
+        statuses = [row.get("status") for row in got.get("status_log") or []]
+        self.assertIn("intent_scheduled", statuses)
+        self.assertIn("intent_dispatched", statuses)
+        self.assertIn("running", statuses)
+        self.assertEqual(statuses[-1], "failed")
+        # Synthetic hops must sit between parse and fail so the client does
+        # not bill the whole wait onto 「意图解析完成」.
+        by_status = {
+            row.get("status"): int(row.get("ts") or 0)
+            for row in got.get("status_log") or []
+        }
+        self.assertLess(by_status["intent_parsed"], by_status["intent_dispatched"])
+        self.assertLess(by_status["intent_dispatched"], by_status["failed"])
+        self.assertLess(by_status["running"], by_status["failed"])
+
     def test_step_status_does_not_regress_from_failed(self) -> None:
         iid = hb.new_intent(
             {
