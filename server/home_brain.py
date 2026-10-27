@@ -4399,7 +4399,15 @@ def notify_intent_status_update(intent_id):
         return jsonify(
             err_msg="intent not exist"
         ), 404
-    log.info("intent:%s", json.dumps(intent))
+    # Avoid json.dumps(full intent) on every hop — large plans made status
+    # POSTs multi-second even on LAN (intent #839).
+    log.info(
+        "intent status id=%s %s → %s edge=%s",
+        intent_id_int,
+        intent.get("status"),
+        intent_status,
+        edge_node_id or "-",
+    )
 
     current = _normalize_status(str(intent.get("status") or "").strip())
     if current in _TERMINAL_STATUSES and intent_status not in _TERMINAL_STATUSES:
@@ -4462,10 +4470,13 @@ def notify_intent_status_update(intent_id):
         }
     )
     _record["steps"] = steps
-    assemble_presentation(intent)
-    if intent.get("presentation") is not None:
-        _record["presentation"] = intent["presentation"]
-        _record["exposed_outputs"] = intent["presentation"]
+    # Presentation only matters at terminal outcomes; assembling on every
+    # dispatched/running hop wasted Edge RTT for no UI change.
+    if intent_status in ("succeeded", "failed"):
+        assemble_presentation(intent)
+        if intent.get("presentation") is not None:
+            _record["presentation"] = intent["presentation"]
+            _record["exposed_outputs"] = intent["presentation"]
     if intent_status == "succeeded":
         _maybe_attach_speak_delivery(intent)
         if intent.get("pending_delivery") is not None:
