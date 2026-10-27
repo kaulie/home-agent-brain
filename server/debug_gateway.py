@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from typing import Any, Callable, Optional
@@ -11,7 +12,12 @@ from debug_client_snapshot import merge_intent_context, normalize_client_snapsho
 from debug_feedback_types import normalize_problem_type, problem_type_label
 from debug_issue_store import DebugIssue, get_store
 from dev_task import get_agent_task
-from web_cursor_feedback import WebCursorError, create_feedback_task, task_api_url
+from web_cursor_feedback import (
+    WebCursorError,
+    create_feedback_task,
+    post_task_message,
+    task_api_url,
+)
 
 log = logging.getLogger("debug_gateway")
 
@@ -66,6 +72,10 @@ def build_intent_context(intent: dict[str, Any]) -> dict[str, Any]:
 # web-cursor stores up to 4000 chars and shows the first 2000 in the agent brief.
 _DESCRIPTION_LIMIT = 4000
 _HEAD_LIMIT = 1800
+# Same caps as the control plane (`attachments.ts`): the messages API rejects more.
+_MAX_AGENT_IMAGES = 5
+_MAX_AGENT_IMAGE_BYTES = 4 * 1024 * 1024
+_AGENT_IMAGE_MIME = frozenset({"image/png", "image/jpeg", "image/gif", "image/webp"})
 
 
 def _clip(text: str, limit: int) -> str:
@@ -107,11 +117,68 @@ def _attachment_lines(issue: DebugIssue) -> list[str]:
     return lines
 
 
+def _agent_image_mime(mime: str) -> str:
+    raw = str(mime or "").split(";", 1)[0].strip().lower()
+    if raw in ("image/jpg", "image/pjpeg"):
+        return "image/jpeg"
+    return raw or "image/jpeg"
+
+
+def feedback_images_for_agent(
+    attachments: list[dict[str, str]] | None,
+) -> tuple[list[dict[str, str]], list[str]]:
+    """Load image bytes the Dev Agent can actually see.
+
+    Returns ``([{data, mimeType}], errors)``. Non-image attachments stay as
+    asset-id text. A missing file is an error string, not a failed report.
+    """
+    try:
+        from sdk.asset_bytes import AssetFetchError, fetch_asset_image_bytes
+    except ImportError:  # pragma: no cover
+        from server.sdk.asset_bytes import AssetFetchError, fetch_asset_image_bytes
+
+    images: list[dict[str, str]] = []
+    errors: list[str] = []
+    for row in attachments or []:
+        if str(row.get("kind") or "image").strip().lower() != "image":
+            continue
+        aid = str(row.get("asset_id") or "").strip()
+        if not aid:
+            continue
+        if len(images) >= _MAX_AGENT_IMAGES:
+            errors.append(f"{aid}: 超过 {_MAX_AGENT_IMAGES} 张，未发送")
+            continue
+        try:
+            data, mime = fetch_asset_image_bytes(aid)
+        except AssetFetchError as err:
+            errors.append(f"{aid}: {err}")
+            continue
+        except Exception as err:
+            errors.append(f"{aid}: {err}")
+            continue
+        mime_type = _agent_image_mime(mime)
+        if mime_type not in _AGENT_IMAGE_MIME:
+            errors.append(f"{aid}: web-cursor 不接受 {mime_type}")
+            continue
+        if not data or len(data) > _MAX_AGENT_IMAGE_BYTES:
+            errors.append(f"{aid}: 图片为空或超过 4MB")
+            continue
+        images.append(
+            {
+                "data": base64.b64encode(data).decode("ascii"),
+                "mimeType": mime_type,
+            }
+        )
+    return images, errors
+
+
 def build_feedback_description(
     issue: DebugIssue,
     context: dict[str, Any],
     *,
     client_snapshot: dict[str, Any] | None = None,
+    image_count: int = 0,
+    image_errors: list[str] | None = None,
 ) -> str:
     """Task description for web-cursor. The fix request stays inside the first 2000 chars."""
     label = problem_type_label(issue.problem_type)
@@ -119,16 +186,41 @@ def build_feedback_description(
         "修复这条 HomeAgent 用户一键反馈。按 web-cursor 任务处理：用下面的现场定位根因，"
         "在本任务注入的仓库里改代码并开 PR，按本任务的 goal 交付。",
         "现场后半如果被截断，以本任务 description 全文为准。",
-        "",
-        "## 现场",
-        f"- issue_id: {issue.issue_id}",
-        f"- intent_id: {issue.intent_id}",
-        f"- session_id: {issue.session_id or context.get('session_id') or '—'}",
-        f"- participant_id: {issue.participant_id}",
-        f"- source: {issue.source}",
-        f"- status: {context.get('intent_status') or '—'}",
-        f"- error: {_clip(str(context.get('error') or '—'), 400)}",
     ]
+    if image_count > 0:
+        head.extend(
+            [
+                "",
+                "## 截图",
+                f"用户上传了 {image_count} 张图片。这些图片会作为下一条用户消息的图片附件发给 Dev Agent，"
+                "模型能直接看到画面，不只有 asset id。",
+                "在看到那些图片之前不要改代码、不要下结论。"
+                "如果这条消息里还没有图片，只回复「等待截图」并结束。",
+            ]
+        )
+    elif image_errors:
+        head.extend(
+            [
+                "",
+                "## 截图",
+                "图片字节没有传到 Dev Agent，不要等待图片。",
+            ]
+        )
+        for note in image_errors[:5]:
+            head.append(f"- {note}")
+    head.extend(
+        [
+            "",
+            "## 现场",
+            f"- issue_id: {issue.issue_id}",
+            f"- intent_id: {issue.intent_id}",
+            f"- session_id: {issue.session_id or context.get('session_id') or '—'}",
+            f"- participant_id: {issue.participant_id}",
+            f"- source: {issue.source}",
+            f"- status: {context.get('intent_status') or '—'}",
+            f"- error: {_clip(str(context.get('error') or '—'), 400)}",
+        ]
+    )
     if label:
         head.append(f"- feedback_type: {issue.problem_type}（{label}）")
     brain = _brain_url_from_snapshot(client_snapshot)
@@ -232,6 +324,50 @@ def _is_pickup_source(source: str) -> bool:
     return key in _PICKUP_SOURCES or key.startswith("pickup")
 
 
+def _deliver_feedback_images(
+    web_task_id: str,
+    *,
+    images: list[dict[str, str]],
+    image_errors: list[str],
+) -> str:
+    """Post screenshot bytes onto the web-cursor task. Empty string means ok."""
+    if not images:
+        return ""
+    note = ""
+    if image_errors:
+        note = "\n未能附上的附件：\n" + "\n".join(f"- {row}" for row in image_errors[:5])
+    message = (
+        f"以下是用户一键反馈上传的截图，共 {len(images)} 张。"
+        "请先看这些图片，再结合上一条现场按任务 goal 交付。"
+        + note
+    )
+    try:
+        post_task_message(web_task_id, message=message, images=images)
+    except WebCursorError as err:
+        log.warning(
+            "debug_report image post failed task=%s: %s",
+            web_task_id,
+            err,
+        )
+        try:
+            post_task_message(
+                web_task_id,
+                message=(
+                    "截图发送失败，不要继续等待图片。"
+                    f"原因：{err}。请按文字现场处理。"
+                ),
+            )
+        except WebCursorError as follow_err:
+            log.warning(
+                "debug_report image failure notice failed task=%s: %s",
+                web_task_id,
+                follow_err,
+            )
+            return f"{err}; 失败通知也没发出：{follow_err}"
+        return str(err)
+    return ""
+
+
 def submit_debug_report(
     *,
     intent_id: int,
@@ -293,7 +429,14 @@ def submit_debug_report(
         context=context,
     )
 
-    description = build_feedback_description(issue, context, client_snapshot=client_snapshot)
+    images, image_errors = feedback_images_for_agent(issue.attachments)
+    description = build_feedback_description(
+        issue,
+        context,
+        client_snapshot=client_snapshot,
+        image_count=len(images),
+        image_errors=image_errors,
+    )
     title = feedback_task_title(issue)
     try:
         created = create_feedback_task(title=title, description=description)
@@ -324,7 +467,18 @@ def submit_debug_report(
             "issue_id": issue.issue_id,
             "intent_id": issue.intent_id,
         }
-    store.update(issue.issue_id, web_cursor_task_id=web_task_id, status="queued")
+    image_post_error = _deliver_feedback_images(
+        web_task_id,
+        images=images,
+        image_errors=image_errors,
+    )
+    update_fields: dict[str, Any] = {
+        "web_cursor_task_id": web_task_id,
+        "status": "queued",
+    }
+    if image_post_error:
+        update_fields["error"] = f"截图未送达 Dev Agent：{image_post_error}"
+    store.update(issue.issue_id, **update_fields)
     issue = store.get(issue.issue_id) or issue
     log.info(
         "debug_report issue=%s intent=%s web_cursor_task=%s source=%s",

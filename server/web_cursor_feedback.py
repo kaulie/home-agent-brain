@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -23,6 +24,7 @@ _DEFAULT_TASK_TYPE = "bugfix"
 _GOALS = frozenset({"merge", "deploy"})
 _TASK_TYPES = frozenset({"feature", "bugfix", "diagnose", "general"})
 _TIMEOUT_SEC = 20
+_IMAGE_POST_TIMEOUT_SEC = 60
 _UI_VERSION_HEADER = "x-ui-version"
 _WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
@@ -93,6 +95,42 @@ def create_feedback_task(*, title: str, description: str) -> dict[str, str]:
     }
 
 
+def post_task_message(
+    task_id: str,
+    *,
+    message: str,
+    images: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Send a follow-up the Dev Agent can see.
+
+    ``POST /api/tasks`` already dispatched the description as text. Image bytes
+    have to ride a later ``POST /api/tasks/{id}/messages`` ``images`` array
+    (base64 ``data`` + ``mimeType``) or the model only sees asset ids.
+    """
+    tid = str(task_id or "").strip()
+    if not tid:
+        raise WebCursorError("task_id is required")
+    text = str(message or "")
+    rows = [
+        row
+        for row in (images or [])
+        if isinstance(row, dict) and str(row.get("data") or "").strip()
+    ]
+    if not text.strip() and not rows:
+        raise WebCursorError("message or images required")
+    payload: dict[str, Any] = {"message": text}
+    if rows:
+        payload["images"] = rows
+    quoted = urllib.parse.quote(tid, safe="")
+    data = _request(
+        "POST",
+        f"/api/tasks/{quoted}/messages",
+        payload,
+        timeout=_IMAGE_POST_TIMEOUT_SEC if rows else _TIMEOUT_SEC,
+    )
+    return data if isinstance(data, dict) else {}
+
+
 def resolve_feedback_project_id() -> str:
     global _project_id_cache
     override = (os.environ.get("WEB_CURSOR_FEEDBACK_PROJECT_ID") or "").strip()
@@ -140,11 +178,13 @@ def _request(
     payload: dict[str, Any] | None = None,
     *,
     attach_ui_version: bool = True,
+    timeout: float | None = None,
 ) -> Any:
     write = method.upper() in _WRITE_METHODS
     version = _ui_version() if write and attach_ui_version else ""
+    limit = _TIMEOUT_SEC if timeout is None else timeout
     try:
-        return _open(method, path, payload, version)
+        return _open(method, path, payload, version, limit)
     except urllib.error.HTTPError as err:
         body, parsed = _read_http_error(err)
         refreshed = _mismatch_server_version(parsed) if write and attach_ui_version else ""
@@ -152,7 +192,7 @@ def _request(
             global _ui_version_cache
             _ui_version_cache = refreshed
             try:
-                return _open(method, path, payload, refreshed)
+                return _open(method, path, payload, refreshed, limit)
             except urllib.error.HTTPError as retry_err:
                 retry_body, retry_parsed = _read_http_error(retry_err)
                 raise WebCursorError(
@@ -165,7 +205,13 @@ def _request(
         raise WebCursorError(f"web-cursor 连不上（{base_url()}）：{err.reason}") from err
 
 
-def _open(method: str, path: str, payload: dict[str, Any] | None, ui_version: str) -> Any:
+def _open(
+    method: str,
+    path: str,
+    payload: dict[str, Any] | None,
+    ui_version: str,
+    timeout: float,
+) -> Any:
     url = base_url() + path
     data = None
     headers = {"Accept": "application/json"}
@@ -175,7 +221,7 @@ def _open(method: str, path: str, payload: dict[str, Any] | None, ui_version: st
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=_TIMEOUT_SEC) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         raw = resp.read()
     if not raw:
         return {}

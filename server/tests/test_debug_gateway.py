@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import sys
 import tempfile
@@ -303,6 +304,133 @@ class DebugGatewayTests(unittest.TestCase):
         title = debug_gateway.feedback_task_title(issue)
         self.assertIn("intent #42", title)
         self.assertIn("执行报错", title)
+        self.assertNotIn("等待截图", text)
+
+    def test_build_feedback_description_waits_for_screenshot_message(self) -> None:
+        assert debug_gateway is not None
+        issue = debug_issue_store.DebugIssue(
+            issue_id=1,
+            intent_id=42,
+            session_id="sess-1",
+            source="user_console",
+            participant_id="living-room-android",
+            status="queued",
+            user_summary="",
+            problem_type="",
+            attachments=[{"asset_id": "asset_abc", "kind": "image"}],
+            task_id=None,
+            error="",
+            context={"user_input": "开灯"},
+            created_at=1.0,
+            updated_at=1.0,
+        )
+        text = debug_gateway.build_feedback_description(
+            issue,
+            issue.context,
+            image_count=1,
+        )
+        self.assertIn("等待截图", text[:2000])
+        self.assertIn("asset_abc", text[:2000])
+
+    def test_feedback_images_for_agent_reads_local_jpeg(self) -> None:
+        assert brain_db is not None
+        assert debug_gateway is not None
+        upload = Path(self.tmp.name) / "uploads"
+        assets = upload / "assets"
+        assets.mkdir(parents=True)
+        payload = b"\xff\xd8\xff\xd9"
+        (assets / "shot.jpg").write_bytes(payload)
+        brain_db.put_asset(
+            {
+                "asset_id": "asset_shot",
+                "type": "image",
+                "mime_type": "image/jpeg",
+                "status": "ready",
+                "storage": {"backend": "local_upload", "key": "shot.jpg"},
+            }
+        )
+        with patch.dict(os.environ, {"BRAIN_UPLOAD_DIR": str(upload)}):
+            images, errors = debug_gateway.feedback_images_for_agent(
+                [
+                    {"asset_id": "asset_shot", "kind": "image"},
+                    {"asset_id": "asset_log", "kind": "file", "filename": "log.txt"},
+                ]
+            )
+        self.assertEqual(errors, [])
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0]["mimeType"], "image/jpeg")
+        self.assertEqual(base64.b64decode(images[0]["data"]), payload)
+
+    def test_post_debug_report_forwards_screenshot_bytes(self) -> None:
+        assert hb is not None
+        intent_id = self._seed_intent()
+        client = hb.app.test_client()
+        images = [{"data": "aGVsbG8=", "mimeType": "image/jpeg"}]
+        with patch(
+            "debug_gateway.create_feedback_task",
+            return_value=_created_task(),
+        ) as created, patch(
+            "debug_gateway.feedback_images_for_agent",
+            return_value=(images, []),
+        ), patch("debug_gateway.post_task_message") as posted:
+            resp = client.post(
+                "/api/v1/debug/report",
+                json={
+                    "intent_id": intent_id,
+                    "participant_id": "living-room-android",
+                    "attachments": [
+                        {"asset_id": "asset_shot", "kind": "image", "mime_type": "image/jpeg"},
+                    ],
+                },
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.get_json().get("ok"))
+        description = created.call_args.kwargs["description"]
+        self.assertIn("等待截图", description[:2000])
+        posted.assert_called_once()
+        self.assertEqual(posted.call_args.args[0], "task-feedback-1")
+        self.assertEqual(posted.call_args.kwargs["images"], images)
+        self.assertIn("截图", posted.call_args.kwargs["message"])
+
+    def test_image_post_failure_tells_agent_not_to_wait(self) -> None:
+        assert hb is not None
+        import web_cursor_feedback
+
+        intent_id = self._seed_intent()
+        client = hb.app.test_client()
+        images = [{"data": "aGVsbG8=", "mimeType": "image/jpeg"}]
+        with patch(
+            "debug_gateway.create_feedback_task",
+            return_value=_created_task(),
+        ), patch(
+            "debug_gateway.feedback_images_for_agent",
+            return_value=(images, []),
+        ), patch(
+            "debug_gateway.post_task_message",
+            side_effect=[
+                web_cursor_feedback.WebCursorError("payload too large"),
+                {"runId": "run-note"},
+            ],
+        ) as posted:
+            resp = client.post(
+                "/api/v1/debug/report",
+                json={
+                    "intent_id": intent_id,
+                    "participant_id": "living-room-android",
+                    "attachments": [
+                        {"asset_id": "asset_shot", "kind": "image"},
+                    ],
+                },
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(posted.call_count, 2)
+        self.assertIn("不要继续等待", posted.call_args_list[1].kwargs["message"])
+        self.assertNotIn("images", posted.call_args_list[1].kwargs)
+        issue_id = int(resp.get_json()["issue_id"])
+        detail = client.get(f"/api/v1/admin/debug/issue/{issue_id}")
+        issue = detail.get_json().get("issue") or detail.get_json()
+        self.assertEqual(issue.get("status"), "queued")
+        self.assertIn("payload too large", issue.get("error") or "")
 
 
 if __name__ == "__main__":

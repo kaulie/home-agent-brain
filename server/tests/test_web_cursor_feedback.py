@@ -169,6 +169,33 @@ class WebCursorFeedbackTests(unittest.TestCase):
         self.assertEqual(created["task_id"], "task-retried")
         self.assertEqual(seen, ["stale", "079ec179"])
 
+    def test_post_task_message_sends_images(self) -> None:
+        os.environ["WEB_CURSOR_FEEDBACK_PROJECT_ID"] = "project-fb"
+        seen: list[tuple[str, dict | None, str | None]] = []
+
+        def fake_urlopen(req, timeout=0):
+            body = req.data.decode("utf-8") if req.data else None
+            payload = json.loads(body) if body else None
+            seen.append((req.full_url, payload, req.get_header("X-ui-version")))
+            if req.full_url.endswith("/health"):
+                return _Resp(json.dumps({"version": "079ec179"}).encode())
+            self.assertGreaterEqual(timeout, 60)
+            return _Resp(json.dumps({"runId": "run-1", "queued": True}).encode())
+
+        images = [{"data": "aGVsbG8=", "mimeType": "image/jpeg"}]
+        with patch("web_cursor_feedback.urllib.request.urlopen", side_effect=fake_urlopen):
+            out = wc.post_task_message(
+                "task-abc",
+                message="看这张图",
+                images=images,
+            )
+        self.assertEqual(out["runId"], "run-1")
+        post = next(item for item in seen if item[0].endswith("/messages"))
+        self.assertEqual(post[0], "http://127.0.0.1:4211/api/tasks/task-abc/messages")
+        self.assertEqual(post[1]["message"], "看这张图")
+        self.assertEqual(post[1]["images"], images)
+        self.assertEqual(post[2], "079ec179")
+
     def test_missing_project_name(self) -> None:
         def fake_urlopen(req, timeout=0):
             return _Resp(json.dumps([{"projectId": "project-other", "name": "home-agent"}]).encode())
