@@ -2863,15 +2863,25 @@ def update_intent_status(intent_id, intent_status, msg=None):
         intent["status_log"] = []
     if intent.get("status") != intent_status:
         intent["status"] = intent_status
+        event_ts = int(time.time() * 1000)
         entry = {
             "status": intent_status,
-            "ts": int(time.time() * 1000),
+            "ts": event_ts,
         }
         if msg:
             entry["msg"] = msg
             intent["msg"] = msg
             if intent_status == "failed":
                 intent["error"] = msg
+        if intent_status in ("succeeded", "failed"):
+            status_log, steps = _backfill_status_log_gaps(
+                intent,
+                list(intent.get("status_log") or []),
+                list(intent.get("steps") or []),
+                terminal_ts=event_ts,
+            )
+            intent["status_log"] = status_log
+            intent["steps"] = steps
         intent["status_log"].append(entry)
         _append_steps_timeline(intent, intent_status, msg or "")
         _save_intent(intent)
@@ -4098,14 +4108,21 @@ def _maybe_finalize_intent_after_step(intent_id_int, intent) -> None:
         intent["status"] = "failed"
         intent["msg"] = msg
         intent["error"] = msg
+        event_ts = int(time.time() * 1000)
         entry = {
             "status": "failed",
-            "ts": int(time.time() * 1000),
+            "ts": event_ts,
             "msg": msg,
         }
-        status_log = list(intent.get("status_log") or [])
+        status_log, steps = _backfill_status_log_gaps(
+            intent,
+            list(intent.get("status_log") or []),
+            list(intent.get("steps") or []),
+            terminal_ts=event_ts,
+        )
         status_log.append(entry)
         intent["status_log"] = status_log
+        intent["steps"] = steps
         _append_steps_timeline(intent, "failed", msg)
         _save_intent(intent)
         log.info("intent %s → failed (step failed, remaining steps abandoned)", intent_id_int)
@@ -4113,13 +4130,20 @@ def _maybe_finalize_intent_after_step(intent_id_int, intent) -> None:
     if not _plan_steps_all_terminal(plan):
         return
     intent["status"] = "succeeded"
+    event_ts = int(time.time() * 1000)
     entry = {
         "status": "succeeded",
-        "ts": int(time.time() * 1000),
+        "ts": event_ts,
     }
-    status_log = list(intent.get("status_log") or [])
+    status_log, steps = _backfill_status_log_gaps(
+        intent,
+        list(intent.get("status_log") or []),
+        list(intent.get("steps") or []),
+        terminal_ts=event_ts,
+    )
     status_log.append(entry)
     intent["status_log"] = status_log
+    intent["steps"] = steps
     _append_steps_timeline(intent, "succeeded", "")
     assemble_presentation(intent)
     if intent.get("presentation") is not None:
@@ -4382,6 +4406,93 @@ def notify_step_status_update(intent_id, step_id):
     )
 
 
+# Client journey timelineOrder includes scheduled → dispatched → running even
+# when Edge skips posting them (async timeout / ledger collapse). Missing hops
+# make every done-but-unstamped row inherit the terminal ts, so parse duration
+# absorbs the whole wait (intent #847).
+_STATUS_LOG_GAP_HOPS = ("intent_scheduled", "intent_dispatched", "running")
+
+
+def _status_log_ts(status_log, name: str):
+    want = str(name or "").strip().lower()
+    for entry in reversed(status_log or []):
+        if str(entry.get("status") or "").strip().lower() != want:
+            continue
+        try:
+            ts = int(entry.get("ts") or 0)
+        except (TypeError, ValueError):
+            continue
+        if ts > 0:
+            return ts
+    return None
+
+
+def _earliest_step_log_ts(intent) -> int | None:
+    times: list[int] = []
+    for entry in intent.get("step_log") or []:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            ts = int(entry.get("ts") or 0)
+        except (TypeError, ValueError):
+            continue
+        if ts > 0:
+            times.append(ts)
+    return min(times) if times else None
+
+
+def _clamp_status_ts(ts: int, *, lo: int | None, hi: int | None) -> int:
+    out = int(ts)
+    if lo is not None and out <= lo:
+        out = lo + 1
+    if hi is not None and out >= hi:
+        # Keep a strict timeline: lo < out < hi when possible.
+        if lo is not None and hi > lo + 1:
+            out = hi - 1
+        elif hi > 1:
+            out = hi - 1
+    if lo is not None and out <= lo:
+        out = lo + 1
+    return out
+
+
+def _backfill_status_log_gaps(intent, status_log, steps, *, terminal_ts: int):
+    """Insert skipped intermediate hops before a terminal status_log append."""
+    log_rows = list(status_log or [])
+    step_rows = list(steps or [])
+    seen = {
+        str(entry.get("status") or "").strip().lower()
+        for entry in log_rows
+        if str(entry.get("status") or "").strip()
+    }
+    anchor = (
+        _status_log_ts(log_rows, "intent_parsed")
+        or _status_log_ts(log_rows, "intent_received")
+    )
+    step_ts = _earliest_step_log_ts(intent)
+    base_ts = step_ts if step_ts is not None else int(terminal_ts)
+    prev_ts = anchor
+    for index, hop in enumerate(_STATUS_LOG_GAP_HOPS):
+        if hop in seen:
+            prev_ts = _status_log_ts(log_rows, hop) or prev_ts
+            continue
+        # Spread synthetic hops 1ms apart under the terminal stamp.
+        candidate = base_ts + index
+        ts = _clamp_status_ts(candidate, lo=prev_ts, hi=int(terminal_ts))
+        log_rows.append({"status": hop, "ts": ts})
+        step_rows.append(
+            {
+                "status": hop,
+                "intent_status": hop,
+                "at": ts / 1000.0,
+                "detail": "",
+            }
+        )
+        seen.add(hop)
+        prev_ts = ts
+    return log_rows, step_rows
+
+
 @app.route("/api/v1/intent/<intent_id>/status", methods=["POST"])
 def notify_intent_status_update(intent_id):
 
@@ -4452,6 +4563,17 @@ def notify_intent_status_update(intent_id):
                 event_ts = parsed_ts
         except (TypeError, ValueError):
             pass
+    steps = list(intent.get("steps") or [])
+    # Intent #847: async Edge hops can be lost (Brain timeout / ledger skip),
+    # so status_log jumps parsed → failed and the iPhone journey bills the
+    # whole wait onto 「意图解析完成」. Fill missing intermediate hops first.
+    if intent_status in ("succeeded", "failed"):
+        status_log, steps = _backfill_status_log_gaps(
+            intent,
+            status_log,
+            steps,
+            terminal_ts=event_ts,
+        )
     log_entry = {
         "status": intent_status,
         "ts": event_ts,
@@ -4460,7 +4582,6 @@ def notify_intent_status_update(intent_id):
         log_entry["msg"] = msg
     status_log.append(log_entry)
     _record['status_log'] = status_log
-    steps = list(intent.get("steps") or [])
     steps.append(
         {
             "status": intent_status,
