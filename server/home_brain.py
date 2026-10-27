@@ -6731,7 +6731,9 @@ def command_handler():
         return jsonify(_job_to_intent(stored))
 
     fetch_num = 0
-    max_fetch_num = 10
+    # Default was 5 — with many open jobs a fresh intent could miss the window
+    # (intent #838 waited ~12s after intent_parsed). Cap stays high but finite.
+    max_fetch_num = 100
     edge_id = request.args.get('edge_id', "")
     if edge_id.strip() == "":
         return jsonify(intents=[])
@@ -6749,13 +6751,24 @@ def command_handler():
             if _job_visible_to_edge(job, edge_id)
         ]
 
-    fetch_num_arg = request.args.get('last', "5")
+    fetch_num_arg = request.args.get('last', "50")
     if fetch_num_arg:
-        fetch_num = int(fetch_num_arg)
+        try:
+            fetch_num = int(fetch_num_arg)
+        except (TypeError, ValueError):
+            fetch_num = 50
 
-    fetch_num = min(fetch_num, max_fetch_num)
+    fetch_num = min(max(1, fetch_num), max_fetch_num)
 
-    sorted_intents = sorted(filtered_intents, key=lambda v: v["id"], reverse=True)
+    def _intent_sort_key(v):
+        raw = v.get("id")
+        try:
+            return (0, int(raw))
+        except (TypeError, ValueError):
+            return (1, str(raw or ""))
+
+    # Numeric id desc — string sort would rank "94" above "838".
+    sorted_intents = sorted(filtered_intents, key=_intent_sort_key, reverse=True)
 
     return jsonify(intents=sorted_intents[0:fetch_num])
  
