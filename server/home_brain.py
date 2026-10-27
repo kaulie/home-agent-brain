@@ -2545,7 +2545,21 @@ def do_execution_plan(intent_id, execution_plan):
     _assert_capture_upload_colocation(simple_plan)
     intent["execution_plan"] = simple_plan
     # available_capabilities: planner catalog at plan/enqueue time (replay).
-    if not (isinstance(intent.get("available_capabilities"), list) and intent.get("available_capabilities")):
+    # Shortcut / direct_invoke already know the capability — do not block on
+    # marketplace ads refresh (up to FETCH_TIMEOUT_SEC) before intent_parsed.
+    # task_kind may live only on ctx_param (DB has no dedicated column).
+    task_kind = str(intent.get("task_kind") or "").strip().lower()
+    if not task_kind:
+        _ctx = intent.get("ctx_param") or intent.get("context") or {}
+        if isinstance(_ctx, dict):
+            task_kind = str(_ctx.get("task_kind") or "").strip().lower()
+    if task_kind in ("shortcut", "direct_invoke"):
+        if not isinstance(intent.get("available_capabilities"), list):
+            intent["available_capabilities"] = []
+    elif not (
+        isinstance(intent.get("available_capabilities"), list)
+        and intent.get("available_capabilities")
+    ):
         intent["available_capabilities"] = _capability_registry_for_prompt()
     pres = intent.get("presentation")
     if isinstance(pres, dict):
@@ -4416,9 +4430,23 @@ def notify_intent_status_update(intent_id):
         if intent_status in ("failed", "intent_waiting"):
             _record['error'] = msg
     status_log = list(intent.get("status_log") or [])
+    # Prefer Edge event time when present so status_log matches step start
+    # (intent #835: running lagged ~7s behind real step start because Brain
+    # stamped receive time).
+    event_ts = int(time.time() * 1000)
+    raw_ts = data.get("ts")
+    if raw_ts is None:
+        raw_ts = data.get("ts_ms")
+    if raw_ts is not None:
+        try:
+            parsed_ts = int(raw_ts)
+            if parsed_ts > 0:
+                event_ts = parsed_ts
+        except (TypeError, ValueError):
+            pass
     log_entry = {
         "status": intent_status,
-        "ts": int(time.time() * 1000),
+        "ts": event_ts,
     }
     if msg:
         log_entry["msg"] = msg
@@ -4429,7 +4457,7 @@ def notify_intent_status_update(intent_id):
         {
             "status": intent_status,
             "intent_status": intent_status,
-            "at": time.time(),
+            "at": event_ts / 1000.0,
             "detail": msg or "",
         }
     )

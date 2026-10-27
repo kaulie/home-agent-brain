@@ -2385,6 +2385,32 @@ class HomeBrainPersistTest(unittest.TestCase):
         running = [row for row in got["status_log"] if row.get("status") == "running"]
         self.assertEqual(running, [])
 
+    def test_intent_status_honors_edge_event_ts(self) -> None:
+        """Edge-supplied ts must land in status_log (intent #835 running lag)."""
+        iid = hb.new_intent(
+            {
+                "status": "intent_dispatched",
+                "text": "播放歌曲十年",
+                "status_log": [],
+            }
+        )
+        edge_ts = 1793062447020
+        client = hb.app.test_client()
+        resp = client.post(
+            f"/api/v1/intent/{iid}/status",
+            json={
+                "intent_status": "running",
+                "edge_node_id": "edge-node-x",
+                "ts": edge_ts,
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        got = hb.get_intent(iid)
+        self.assertEqual(got["status"], "running")
+        running = [row for row in got["status_log"] if row.get("status") == "running"]
+        self.assertEqual(len(running), 1)
+        self.assertEqual(running[0].get("ts"), edge_ts)
+
     def test_step_status_does_not_regress_from_failed(self) -> None:
         iid = hb.new_intent(
             {
@@ -3603,6 +3629,63 @@ class HomeBrainPersistTest(unittest.TestCase):
         self.assertEqual(
             hb._ncm_play_issuer_id({"edge_id": "android-music"}),
             "android-music",
+        )
+
+    def test_shortcut_do_execution_plan_skips_marketplace_catalog(self) -> None:
+        """Shortcut enqueue must not block on marketplace ads refresh."""
+        from unittest.mock import patch
+
+        music_svc = {
+            "service_id": "netease.music",
+            "display_name": "网易云音乐",
+            "capabilities": [{"capability_id": "music.play"}],
+        }
+        brain_db.put_registration(
+            {
+                "participant_id": "mac-music",
+                "device_type": "mac",
+                "client_hint": "living-room-mac",
+                "roles": ["runtime"],
+                "services": [music_svc],
+            }
+        )
+        self._heartbeat("mac-music")
+        hb._REGISTERED_edges = brain_db.registration_ids()
+        hb.rebuild_capability_maps()
+        iid = hb.new_intent(
+            {
+                "status": "intent_received",
+                "text": "播放歌曲十年",
+                "source": "text",
+                "edge_id": "mac-music",
+            }
+        )
+        intent = hb.get_intent(iid)
+        intent["task_kind"] = "shortcut"
+        ctx = dict(intent.get("ctx_param") or {})
+        ctx["task_kind"] = "shortcut"
+        intent["ctx_param"] = ctx
+        hb._save_intent(intent)
+        with patch.object(
+            hb, "_capability_registry_for_prompt", side_effect=AssertionError("blocked")
+        ):
+            hb.do_execution_plan(
+                iid,
+                [
+                    {
+                        "step": 1,
+                        "capability": "music.play",
+                        "assigned_edge_id": "mac-music",
+                        "input_constrict": {"song": "十年", "user_input": "播放歌曲十年"},
+                        "output_constrict": {},
+                    }
+                ],
+            )
+        # get_intent strips available_capabilities from the view; read the job row.
+        raw = brain_db.get_job(iid) or {}
+        self.assertEqual(raw.get("available_capabilities") or [], [])
+        self.assertEqual(
+            (hb.get_intent(iid) or {})["execution_plan"][0]["capability"], "music.play"
         )
 
     def test_do_execution_plan_stamps_music_play_issuer(self) -> None:
