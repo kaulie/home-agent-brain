@@ -5,7 +5,15 @@ No Brain imports, network calls, storage access or startup side effects.
 import json
 
 
-_ARK_SECRET_KEYS = frozenset({"authorization", "api_key", "ark_api_key", "bearer"})
+_ARK_SECRET_KEYS = frozenset(
+    {
+        "authorization",
+        "api_key",
+        "ark_api_key",
+        "deepseek_api_key",
+        "bearer",
+    }
+)
 
 
 _ARK_HTTP_MSG_MAX = 240
@@ -106,7 +114,7 @@ def _ark_http_error_msg(response_json):
     if status < 400:
         return None
     if status == 401:
-        return "规划服务 401，检查 ARK_API_KEY"
+        return "规划服务 401，检查 DEEPSEEK_API_KEY 或 ARK_API_KEY"
     code = ""
     message = ""
     err = response_json.get("error")

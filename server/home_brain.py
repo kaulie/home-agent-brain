@@ -426,8 +426,14 @@ if __package__:
         policy_items_from_body as _policy_items_from_body,
         step_status_text as _step_status_text,
     )
-    from .llm_provider import get_planner_transport
-    from .volcano_ark_client import ARK_HTTP_401_SENTINEL, build_planner_payload, build_runner_payload
+    from .llm_provider import (
+        ARK_HTTP_401_SENTINEL,
+        active_planner_provider_id,
+        build_planner_payload,
+        build_runner_payload,
+        get_planner_transport,
+        planner_cloud_service_id,
+    )
 else:
     import brain_env as _brain_env
     from planner_query_cache import (
@@ -469,14 +475,24 @@ else:
         policy_items_from_body as _policy_items_from_body,
         step_status_text as _step_status_text,
     )
-    from llm_provider import get_planner_transport
-    from volcano_ark_client import ARK_HTTP_401_SENTINEL, build_planner_payload, build_runner_payload
+    from llm_provider import (
+        ARK_HTTP_401_SENTINEL,
+        active_planner_provider_id,
+        build_planner_payload,
+        build_runner_payload,
+        get_planner_transport,
+        planner_cloud_service_id,
+    )
 
 _HERE = _brain_env.SERVER_DIR
 MODEL_ID = _brain_env.MODEL_ID
 ARK_API_KEY = _brain_env.ARK_API_KEY
 ARK_URL = _brain_env.ARK_URL
 ARK_RESPONSES_URL = _brain_env.ARK_RESPONSES_URL
+DEEPSEEK_API_KEY = getattr(_brain_env, "DEEPSEEK_API_KEY", "")
+DEEPSEEK_URL = getattr(_brain_env, "DEEPSEEK_URL", "")
+DEEPSEEK_MODEL_ID = getattr(_brain_env, "DEEPSEEK_MODEL_ID", "")
+LLM_PROVIDER = getattr(_brain_env, "LLM_PROVIDER", "deepseek")
 PROMPT_FILE = _brain_env.PROMPT_FILE
 QWEN_PROMPT_FILE = _brain_env.QWEN_PROMPT_FILE
 QWEN_PLANNER_URL = _brain_env.QWEN_PLANNER_URL
@@ -2016,10 +2032,11 @@ def _planner_prompt_pair(user_text, intent_id, intent_base_time, intent=None):
 
 
 def _record_ark_planner_call(ok: bool) -> None:
+    service_id = planner_cloud_service_id()
     try:
-        brain_db.record_cloud_call("ark.planner", ok, "brain")
+        brain_db.record_cloud_call(service_id, ok, "brain")
     except Exception:
-        log.exception("record_cloud_call ark.planner failed")
+        log.exception("record_cloud_call %s failed", service_id)
 
 
 def call_ark(user_text, session_id, user_id, intent_id, intent_base_time, intent=None, *, _retry: int = 0):
@@ -2027,7 +2044,8 @@ def call_ark(user_text, session_id, user_id, intent_id, intent_base_time, intent
     intent = intent or get_intent(intent_id) or {}
     source = str(intent.get("source") or "text")
     catalog = _capability_registry_for_prompt()
-    catalog_fp = _capability_registry_fingerprint(catalog)
+    # Include provider so Ark↔DeepSeek swaps do not reuse each other's plans.
+    catalog_fp = f"{active_planner_provider_id()}:{_capability_registry_fingerprint(catalog)}"
     cache_hit = None if _retry > 0 else get_cache(user_text, source, catalog_fingerprint=catalog_fp)
     if cache_hit is not None:
         if _planner_empty_plan_unreliable(user_text, cache_hit, catalog):
@@ -2053,12 +2071,17 @@ def call_ark(user_text, session_id, user_id, intent_id, intent_base_time, intent
     if len(safe_payload) > 8000:
         safe_payload = safe_payload[:8000] + "...(truncated)"
     log.debug("ark payload: %s", safe_payload)
-    log.info("ark request model=%s payload_bytes=%d", MODEL_ID, len(safe_payload))
+    log.info(
+        "planner request provider=%s model=%s payload_bytes=%d",
+        active_planner_provider_id(),
+        MODEL_ID,
+        len(safe_payload),
+    )
     ans = ""
     cost_ms = 0
     response_json = None
     try:
-        log.info("invoke doubao api begin")
+        log.info("invoke planner api begin provider=%s", active_planner_provider_id())
         chat_resp = get_planner_transport()(payload_obj, 180.0)
         cost_ms = chat_resp.cost_ms
         response_json = chat_resp.response_json
@@ -2068,7 +2091,7 @@ def call_ark(user_text, session_id, user_id, intent_id, intent_base_time, intent
             _record_ark_planner_call(False)
         else:
             _record_ark_planner_call(True)
-        log.info("invoke doubao api end:%s", cost_ms)
+        log.info("invoke planner api end:%s", cost_ms)
         llm_logger.info(
             "cost_ms=%s | question=%s | answer=%s", cost_ms, user_text, response_json
         )
@@ -2095,7 +2118,7 @@ def call_ark(user_text, session_id, user_id, intent_id, intent_base_time, intent
             log.info("skip planner cache (empty plan with matching catalog) question=%s", user_text)
     except Exception as e:
         _record_ark_planner_call(False)
-        log.exception("call doubao api error: %s", e)
+        log.exception("call planner api error: %s", e)
     return _ark_result(
         ans=ans,
         cost_ms=cost_ms,
@@ -2921,9 +2944,9 @@ def _record_intent_review(
     response_json=None,
 ):
     try:
-        planner_name = planner or "ark"
+        planner_name = planner or active_planner_provider_id()
         if model is None:
-            model = "" if planner_name != "ark" else MODEL_ID
+            model = "" if planner_name == "qwen" else MODEL_ID
         brain_db.put_intent_review(
             {
                 "intent_id": intent_id,
@@ -3062,7 +3085,7 @@ def _process_llm_task(task):
             fail_msg = None
             if not stored_plan:
                 if str(ans).strip() == ARK_HTTP_401_SENTINEL:
-                    fail_msg = "规划服务 401，检查 ARK_API_KEY"
+                    fail_msg = "规划服务 401，检查 DEEPSEEK_API_KEY 或 ARK_API_KEY"
                 else:
                     fail_msg = _ark_http_error_msg(fields.get("response_json"))
                     if not fail_msg:

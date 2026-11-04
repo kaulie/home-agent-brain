@@ -46,4 +46,4 @@ Admin 展示值：`cd server && python3 -m unittest tests.test_admin_values -v`
 
 ## 提交与敏感物
 
-不要提交 `server/.env`、`ARK_API_KEY`、`BRAIN_ADMIN_TOKEN`、sqlite 库、`uploads/`。
+不要提交 `server/.env`、`DEEPSEEK_API_KEY`、`ARK_API_KEY`、`BRAIN_ADMIN_TOKEN`、sqlite 库、`uploads/`。

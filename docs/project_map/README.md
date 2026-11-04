@@ -41,5 +41,9 @@
 8. **`BRAIN_DATA_DIR` 默认值（2026-10-18）。** 未设置时为 `server/data`；
    平台部署由 `start.sh` 写成 `<runtime>/backend/data`。`build.sh` 注释里的
    `~/database/home-agent-brain` 仍过时，待人决定是否修改。
+9. **规划 LLM 默认 DeepSeek（2026-11-04）。** `BRAIN_LLM_PROVIDER` 默认 `deepseek`
+   （`DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL_ID=deepseek-v4-pro`）；
+   `volcano_ark` + `ARK_API_KEY` 仍可回切。边界在 `llm_provider.py` /
+   `deepseek_client.py` / `volcano_ark_client.py`。
 
 后续 agent 若发现上述条目被新代码推翻，删除或改写，不要累积过期异议。

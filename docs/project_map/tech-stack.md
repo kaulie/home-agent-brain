@@ -7,7 +7,7 @@
 | 语言 | Python 3.10+ |
 | Web | **Flask**（唯一写进 requirements 的三方库） |
 | 进程入口 | `server/home_brain.py`；shim `home_brain.py` |
-| 规划 LLM | 火山方舟（`ARK_API_KEY`），prompt 文件在 `server/prompts/` |
+| 规划 LLM | 默认 DeepSeek（`DEEPSEEK_API_KEY` / `deepseek-v4-pro`）；可 `BRAIN_LLM_PROVIDER=volcano_ark` 回切方舟。prompt 在 `server/prompts/` |
 | 库 | SQLite（stdlib） |
 | 单测 | `unittest`，`server/tests/` |
 

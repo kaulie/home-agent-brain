@@ -71,7 +71,7 @@ if [ ! -f "${ENV_FILE}" ]; then
     log "把 ${ENV_FILE_LEGACY} 迁到 ${ENV_FILE}（部署只保 backend/）"
     mv "${ENV_FILE_LEGACY}" "${ENV_FILE}"
   else
-    die "缺少 ${ENV_FILE}（需要 ARK_API_KEY 等；模板见 ${SERVER}/.env.example），且不入 git"
+    die "缺少 ${ENV_FILE}（需要 DEEPSEEK_API_KEY 或 ARK_API_KEY 等；模板见 ${SERVER}/.env.example），且不入 git"
   fi
 fi
 chmod 600 "${ENV_FILE}" 2>/dev/null || true

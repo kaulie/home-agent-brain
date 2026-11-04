@@ -74,10 +74,10 @@ mkdir -p server/data server/llm_logs
 if [[ ! -f server/.env ]]; then
   if [[ -f server/.env.example ]]; then
     cp server/.env.example server/.env
-    echo "created server/.env from example — fill ARK_API_KEY before use"
+    echo "created server/.env from example — fill DEEPSEEK_API_KEY before use"
   else
-    echo "ARK_API_KEY=" > server/.env
-    echo "created empty server/.env — fill ARK_API_KEY"
+    echo "DEEPSEEK_API_KEY=" > server/.env
+    echo "created empty server/.env — fill DEEPSEEK_API_KEY"
   fi
 fi
 PY=python3
