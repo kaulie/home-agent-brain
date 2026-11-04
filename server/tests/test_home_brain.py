@@ -347,7 +347,7 @@ class HomeBrainPersistTest(unittest.TestCase):
             hb._ark_http_error_msg(
                 {"http_status": 401, "error": {"code": "AuthenticationError"}}
             ),
-            "规划服务 401，检查 ARK_API_KEY",
+            "规划服务 401，检查 DEEPSEEK_API_KEY 或 ARK_API_KEY",
         )
         msg = hb._ark_http_error_msg(
             {
@@ -5306,7 +5306,9 @@ class HomeBrainPersistTest(unittest.TestCase):
         self.assertEqual(payload["temperature"], 0.2)
         self.assertEqual(payload["max_tokens"], 4096)
         self.assertEqual(payload["response_format"], {"type": "json_object"})
-        self.assertEqual(payload["extra_body"]["thinking"]["type"], "disabled")
+        # Default provider is DeepSeek: thinking is top-level, no Ark extra_body.
+        self.assertEqual(payload["thinking"]["type"], "disabled")
+        self.assertNotIn("extra_body", payload)
         self.assertEqual(payload["messages"][0]["role"], "system")
         self.assertEqual(payload["messages"][1]["role"], "user")
         dumped = json.dumps(payload)
@@ -5322,7 +5324,7 @@ class HomeBrainPersistTest(unittest.TestCase):
         from unittest.mock import patch
 
         catalog: list[dict] = []
-        fp = hb._capability_registry_fingerprint(catalog)
+        fp = f"{hb.active_planner_provider_id()}:{hb._capability_registry_fingerprint(catalog)}"
         hb.set_cache("现在几点了", '{"plan":[]}', "text", catalog_fingerprint=fp)
         iid = hb.new_intent(
             {

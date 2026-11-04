@@ -60,7 +60,7 @@ class VolcanoArkClientTests(unittest.TestCase):
             self.assertEqual(out.content, "stub")
             self.assertEqual(seen, [("x", 3.0)])
         finally:
-            llm.set_planner_transport(None)
+            llm.configure_from_env()
 
 
 if __name__ == "__main__":

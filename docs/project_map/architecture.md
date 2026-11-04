@@ -96,5 +96,5 @@ Vision / LLM 原始 JSON 即为契约，禁止拆包兜底。
 |---|---|
 | 集市 | `http://127.0.0.1:4250` |
 | OCR | `http://127.0.0.1:9188` |
-| 方舟 | `ARK_API_KEY` |
+| 规划 LLM | 默认 DeepSeek：`DEEPSEEK_API_KEY`（`BRAIN_LLM_PROVIDER=deepseek`）；回切方舟：`BRAIN_LLM_PROVIDER=volcano_ark` + `ARK_API_KEY` |
 | 部署平台 | `:4220`（本进程不调自己 restart） |

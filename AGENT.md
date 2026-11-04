@@ -18,7 +18,7 @@
 | `kind=system` 步在 Brain 就地执行；设备 I/O 在 Gateway / 手机 | 同上 |
 | 部署走平台 `:4220`（`build.sh` + `scripts/{start,stop,restart}.sh`）。合入 `main` ≠ 已上线 | [deployment.md](docs/project_map/deployment.md)、[release.md](docs/project_map/release.md) |
 | OCR 是 HTTP sidecar，默认 `OCR_SERVICE_URL=http://127.0.0.1:9188`（[kaulie/ocr-service](https://github.com/kaulie/ocr-service)） | [architecture.md](docs/project_map/architecture.md) |
-| 栈是 Flask + SQLite + 方舟；无 Docker 一等路径 | [tech-stack.md](docs/project_map/tech-stack.md) |
+| 栈是 Flask + SQLite + DeepSeek（可回切方舟）；无 Docker 一等路径 | [tech-stack.md](docs/project_map/tech-stack.md) |
 
 Runtime / planner 初始化会要求：**优先读目标仓库根目录的 `AGENT.md`**。你正在读的就是那份文件。
 
@@ -91,4 +91,4 @@ Runtime / planner 初始化会要求：**优先读目标仓库根目录的 `AGEN
 
 ## 7. 安全
 
-不要打印或提交 `ARK_API_KEY`、`BRAIN_ADMIN_TOKEN`、`server/.env`。库在 `BRAIN_DATA_DIR`（生产常在 `/Users/gaolei/database/home-agent-brain`），不要把库文件打进 git 或发版包。
+不要打印或提交 `DEEPSEEK_API_KEY`、`ARK_API_KEY`、`BRAIN_ADMIN_TOKEN`、`server/.env`。库在 `BRAIN_DATA_DIR`（生产常在 `/Users/gaolei/database/home-agent-brain`），不要把库文件打进 git 或发版包。

@@ -52,7 +52,10 @@ def default_upload_dir() -> Path:
 
 bootstrap_dotenv()
 
-MODEL_ID = os.environ.get("ARK_MODEL_ID", "ep-20260712174403-5jcgs")
+# Planner LLM provider: deepseek (default) | volcano_ark
+LLM_PROVIDER = (os.environ.get("BRAIN_LLM_PROVIDER") or "deepseek").strip().lower()
+
+ARK_MODEL_ID = os.environ.get("ARK_MODEL_ID", "ep-20260712174403-5jcgs")
 ARK_API_KEY = os.environ.get("ARK_API_KEY", "")
 ARK_URL = os.environ.get(
     "ARK_URL",
@@ -62,6 +65,19 @@ ARK_RESPONSES_URL = os.environ.get(
     "ARK_RESPONSES_URL",
     "https://ark.cn-beijing.volces.com/api/v3/responses",
 )
+
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_URL = os.environ.get(
+    "DEEPSEEK_URL",
+    "https://api.deepseek.com/chat/completions",
+)
+DEEPSEEK_MODEL_ID = os.environ.get("DEEPSEEK_MODEL_ID", "deepseek-v4-pro")
+
+_provider = LLM_PROVIDER
+if _provider in ("volcano_ark", "ark", "doubao", "volc"):
+    MODEL_ID = ARK_MODEL_ID
+else:
+    MODEL_ID = DEEPSEEK_MODEL_ID
 PROMPT_FILE = SERVER_DIR / "prompts" / "task_planner_system_prompt.md.en"
 QWEN_PROMPT_FILE = SERVER_DIR / "prompts" / "task_planner_system_prompt.qwen-small.md.en"
 QWEN_PLANNER_URL = (

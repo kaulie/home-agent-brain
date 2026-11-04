@@ -32,8 +32,8 @@ Home Agent OS 的 **Brain 控制面**独立仓库。
 ## 运行
 
 ```bash
-# 一次性：.env（含 ARK_API_KEY，不入 git）+ 依赖
-cp server/.env.example server/.env   # 填 ARK_API_KEY
+# 一次性：.env（含 DEEPSEEK_API_KEY，不入 git）+ 依赖
+cp server/.env.example server/.env   # 填 DEEPSEEK_API_KEY（回切方舟则 ARK_API_KEY + BRAIN_LLM_PROVIDER=volcano_ark）
 python3 -m venv server/.venv && server/.venv/bin/pip install -r server/requirements.txt
 
 # 启动（runtime 目录里就是这套脚本，部署平台也按它调）

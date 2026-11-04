@@ -35,6 +35,7 @@ except ImportError:  # pragma: no cover
 _TERMINAL_STATUSES = frozenset({"succeeded", "success", "completed", "failed", "error", "cancelled"})
 
 _KNOWN_CLOUD_SERVICES: dict[str, str] = {
+    "deepseek.planner": "DeepSeek规划",
     "ark.planner": "方舟规划",
     "ark.vision": "方舟视觉",
     "ark.query": "方舟问答/生图",
